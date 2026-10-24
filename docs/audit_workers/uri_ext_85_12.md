@@ -49,10 +49,55 @@ smart_str_free sebelum FAILURE (contoh :375-401, :622-637). `fill_errors`
 menangani OOM ganda (:228-242). Kode baru tapi mengikuti konvensi fallible
 alloc 8.5 dengan rapi.
 
-## Kesimpulan extension
+## Kandidat L — RFC3986 to_string: `uriToStringCharsRequiredA` int overflow / charsRequired mismatch
 
-3 kandidat diaudit, 3 gugur dengan bukti baris. Tidak ada kandidat bertahan.
-Files read: uri_parser_whatwg.c (penuh untuk jalur init/parse/read/write),
-php_uri_common.c (helper), referensi silang zend_operators.c/zend_string.c.
- belum dibaca: uri_parser_rfc3986.c (725 baris), php_uri.c (1.197 baris) —
-ditandai untuk lanjutan.
+- Lokasi: uri_parser_rfc3986.c:658-690 (`php_uri_parser_rfc3986_to_string`),
+  uriparser/src/UriRecompose.c:74-135 (`ToStringEngine`)
+- Pola yang dicari: `charsRequired` dari pass pertama tidak mencukupi pada
+  pass kedua → heap overflow saat `uriToStringA` menulis.
+- Gugur: pass pertama dan kedua menjalankan engine yang SAMA dengan state
+  URI yang SAMA (imutabel di antara keduanya — tidak ada user callback di
+  tengah `zend_string_alloc` → `uriToStringA`). engine sendiri sudah
+  overflow-guarded: `charsToWrite > (size_t)INT_MAX - written` → TOO_LONG,
+`charsToWrite > SIZE_MAX / sizeof(URI_CHAR)` → TOO_LONG (UriRecompose.c
+  :120-135). `++` pada charsRequired memberi ruang `\0`. `ZEND_ASSERT(result
+  == URI_SUCCESS)` valid karena satu-satunya failure mode enginenya adalah
+  buffer kurang / NULL — keduanya mustahil pada pass ini.
+
+## Kandidat M — free_obj memanggil destroy(uri=NULL) — lxb_url_destroy NULL-safe
+
+- Lokasi: php_uri.c:1030-1058 (`php_uri_object_create`, `free`), 
+  uri_parser_whatwg.c:692-697 (`destroy`), clone jalur oom :1071-1075
+- Pola R1: bila `clone()` gagal OOM, `zend_object_release(new_uri_object->std)`
+  memanggil free dengan `new_uri_object->uri` masih NULL → 
+  `parser->destroy(NULL)`.
+- Gugur: `lxb_url_destroy(NULL)` punya guard eksplisit 
+  `if (url == NULL) return NULL;` (lexbor/url/url.c:4218-4226). RFC3986
+  destroy juga guard `uriparser_uris == NULL` (uri_parser_rfc3986.c:700-706).
+  Tidak ada crash. lexbor sinkron dengan kontrak ini.
+
+## Kandidat N — port_str_to_zend_long_checked: ceil vs floor `MAX_LENGTH_OF_LONG`
+
+- Lokasi: uri_parser_rfc3986.c:362-382
+- Cek batas: `len > MAX_LENGTH_OF_LONG` → -1. Untuk len == MAX_LENGTH_OF_LONG
+  (20 digit pada 64-bit), string "99999999999999999999" > ZEND_LONG_MAX
+  tertangkap oleh `result > ZEND_LONG_MAX` → -1. Buffer berukuran
+  `MAX_LENGTH_OF_LONG + 1`, `zend_mempcpy(buf, str, len)` menulis tepat len
+  byte + `*p = 0` terminator di buf[len]. Tepat. Gugur.
+
+## Kesimpulan extension (tambahan setelah full-read rfc3986.c + core)
+
+Semua kandidat ditutup. ext/uri kini dibaca penuh: uri_parser_whatwg.c (penuh),
+uri_parser_rfc3986.c (penuh), php_uri.c (objek handler + create/clone/free),
+php_uri_common.c. Modul bundled uriparser (UriRecompose.c) dicek untuk
+overflow — engine-nya punya guard modern.
+
+Tidak ada kandidat bertahan. Kualitas kode ext/uri konsisten tinggi: fallible
+pattern (`handle_pending_oom` :65-74, ZEND_HAS_OOM, `ECALLOC` non-null) dipakai
+rapi di semua paths, termasuk jalur OOM yang biasanya dilupakan proyek lain.
+
+Yang belum dibaca dari ext/uri (ditandai untuk lanjutan bila diperlukan):
+php_uri_arginfo.h (generated), bagian php_uri.c 95-1027 (getter/setter
+boilerplate), php_uri_common.h. Ini dianggap rendah risiko karena hanya
+memanggil handler yang sudah dibaca.
+
