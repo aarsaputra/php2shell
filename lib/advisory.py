@@ -36,6 +36,12 @@ CVE_115560 = {
         "session.upload_progress.enabled = On",
     ],
     "mitigation": "session.upload_progress.enabled=0",
+    "mitigation_scope": (
+        "TIDAK wajib untuk semua orang. php.net 2026-10-23: \"Applications "
+        "that never change the serialize handler at runtime can keep the "
+        "feature enabled.\" Sudah menerapkan mitigasi 21 Okt? Tidak perlu "
+        "tindakan tambahan."
+    ),
     "note": (
         "Kombinasi konfigurasi + kode aplikasi yang tidak lazim; PHP Foundation "
         "menilainya tidak terjadi di praktik normal, jadi ditangani di siklus "
@@ -123,6 +129,7 @@ def describe() -> str:
         f"   status   : {CVE_115560['status']}",
         "   syarat   : " + " + ".join(CVE_115560["requires"]),
         f"   mitigasi : {CVE_115560['mitigation']} (php_admin_flag, bukan ini_set)",
+        f"              {CVE_115560['mitigation_scope']}",
         f"   patch    : TIDAK ditutup 8.5.12/8.4.27/8.3.36/8.2.35",
         f"   ITW      : {'ya' if CVE_115560['itw_exploited'] else 'belum dilaporkan'}",
         f"   catatan  : {CVE_115560['note']}",

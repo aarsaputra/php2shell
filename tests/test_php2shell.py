@@ -586,6 +586,16 @@ class TestAdvisory(unittest.TestCase):
         self.assertIn("php_admin_flag", s)
         self.assertIn("TIDAK ditutup 8.5.12", s)
 
+    def test_mitigasi_115560_tidak_wajib_untuk_semua(self):
+        """php.net: aplikasi yang tak mengubah serialize handler saat runtime
+        boleh tetap mengaktifkan fitur. Tool tidak boleh menakut-nakuti semua."""
+        sys.path.insert(0, TOOLKIT)
+        from lib import advisory
+        scope = advisory.CVE_115560["mitigation_scope"]
+        self.assertIn("TIDAK wajib", scope)
+        self.assertIn("can keep the feature enabled", scope)
+        self.assertIn("TIDAK wajib untuk semua orang", advisory.describe())
+
     def test_advisory_tidak_mengklaim_eksploitasi(self):
         sys.path.insert(0, TOOLKIT)
         from lib import advisory
