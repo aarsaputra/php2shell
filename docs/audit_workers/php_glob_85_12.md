@@ -48,10 +48,23 @@ pendek daripada glibc glob.
   design" oleh upstream (pola serupa di Redis/glob duluan ditolak),
   dan bukti dinamis BELUM ADA. Static = kandidat; tanpa PoC crash ini
   TIDAK boleh diklaim vulnerability.
-- Tindak lanjut yang dibutuhkan sebelum klaim: (1) build CLI biasa (tanpa
-  ASAN pun cukup, crash stack), (2) PoC `glob('{' . str_repeat('{a}',n) . '}')`
-  (struktur: `'{'*n + 'a' + '}'*n`), n ~ 1000, (3) uji di CLI (stack 8 MB)
-  dan FPM pool (stack worker biasanya 8 MB juga).
+- Status akhir (dinamis, 2026-10-25): **GUGUR — tidak reproducible.**
+  Build CLI 8.5.12 murni (configure --disable-all --enable-cli, binary
+  `p2s-lab/cli85/sapi/cli/php`) diuji dengan 9 varian:
+  - v1 `{'*n . a . '}*n` n=50..1023 (maks) — SURVIVED
+  - v3 `{,`*n + a + `}`*n n=500/1000/1200/1364 — SURVIVED
+  - v4/v5 wrapper ber-koma `t={t,z}` k=3..818 **dengan GLOB_BRACE**,
+    diverifikasi jalur globexp2 aktif (glob('{a,b}', GLOB_BRACE) di sandbox
+    menghasilkan [a,b]; k=818 menghasilkan count=1 = jalur rekursi benar
+    berjalan sampai level terdalam)
+  - Stress stack: ulimit -s 4096/2048/1024/512/256/128 KB — SEMUA SURVIVED,
+    exit 0. Kedalaman rekursi 818 tidak menumpuk 8 KB/frame sebagaimana
+    dugaan statis (kemungkinan besar penanganan per-koma membuat cabang
+    rekursif berakhir return → tail-call/stack reuse oleh -O2; pola
+    alokasi patbuf tidak per-frame sepanjang jalur hidup).
+  - Pembanding 8.4 glibc: SURVIVED juga — tidak ada regresi terlihat.
+  Pelajaran: hitungan frame statis (8 KB × depth) menyesatkan; bukti
+  dinamis menutup. Verdict negatif terdokumentasi sesuai hard rule #3.
 
 ## Kandidat Q — reallocarray fallback
 
