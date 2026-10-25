@@ -72,7 +72,7 @@ CVE_CHOICES = ("CVE-2026-109618", "CVE-2026-109619")
 # 109618 "OOM corruption" adalah bug SATU request yang konsumennya shutdown
 # procedure; tool ini tidak mengimplementasikannya.
 CVE_SUPPORTED = ("CVE-2026-109619",)
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 
 
 # ---------------------------------------------------------------- banner ----
