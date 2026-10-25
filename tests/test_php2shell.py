@@ -14,7 +14,7 @@ import sys
 import tempfile
 import unittest
 
-VERSI_DIHARAPKAN = "1.3.0"
+VERSI_DIHARAPKAN = "1.4.0"
 TOOLKIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLI = os.path.join(TOOLKIT, "php2shell.py")
 PY = sys.executable
@@ -788,6 +788,79 @@ class TestProofFileBukanHampa(unittest.TestCase):
         p = proof_host_path("pv")
         self.assertTrue(p.endswith("/out/pv"))
         self.assertIn("php2shell", p)
+
+
+class TestOomProbeBaru(unittest.TestCase):
+    """Fitur detect OOM aktif (lib/oomprobe.py) — metode assetnote."""
+
+    def test_oomprobe_modul_ada_dan_api_lengkap(self):
+        sys.path.insert(0, TOOLKIT)
+        from lib.oomprobe import oom_detect, OOMResult
+        r = OOMResult()
+        d = r.as_dict()
+        for k in ("verdict", "signal", "evidence", "probes_sent", "probe_results"):
+            self.assertIn(k, d)
+
+    def test_nested_keys_62_dan_probe_bertingkat(self):
+        sys.path.insert(0, TOOLKIT)
+        import lib.oomprobe as op
+        self.assertEqual(op.NESTED_KEYS, 62)
+        self.assertEqual(op.PROBES_MB, (1, 8, 20))
+        nama = op._nested_name()
+        self.assertEqual(nama.count("[b]"), 61)
+
+    def test_post_len_rejected_tidak_dianggap_vulnerable(self):
+        """Warning 'POST Content-Length exceeds' di lokasi 'Unknown' TIDAK
+        boleh dihitung fatal-in-parser (post_max_size guard)."""
+        sys.path.insert(0, TOOLKIT)
+        from lib.oomprobe import _classify_response
+
+        class FakeResp:
+            status = 200
+            body = ("<b>Warning</b>:  PHP Request Startup: POST Content-Length "
+                    "of 9437242 bytes exceeds the limit of 8388608 bytes in "
+                    "<b>Unknown</b> on line <b>0</b>")
+        verdict, signal = _classify_response(FakeResp(), control_body_len=10)
+        self.assertEqual(verdict, "inconclusive")
+        self.assertEqual(signal, "post_len_rejected")
+
+    def test_oom_in_parser_true_positive(self):
+        sys.path.insert(0, TOOLKIT)
+        from lib.oomprobe import _classify_response
+
+        class FakeResp:
+            status = 200
+            body = ("Fatal error: Allowed memory size of 8388608 bytes "
+                    "exhausted (tried to allocate 20 bytes) in Unknown on line 0")
+        verdict, signal = _classify_response(FakeResp(), control_body_len=10)
+        self.assertEqual(verdict, "vulnerable")
+        self.assertEqual(signal, "oom_in_parser")
+
+    def test_empty_500_differential(self):
+        sys.path.insert(0, TOOLKIT)
+        from lib.oomprobe import _classify_response
+
+        class FakeResp:
+            status = 500
+            body = ""
+        verdict, signal = _classify_response(FakeResp(), control_body_len=120)
+        self.assertEqual(verdict, "vulnerable")
+        self.assertEqual(signal, "empty_500")
+
+    def test_detect_auto_oom_default_and_no_oom_flag(self):
+        """detect() default: OOM jalan bila verdict unknown/eol; --no-oom
+        memetakan check_oom=False."""
+        sys.path.insert(0, TOOLKIT)
+        from lib import detect as det
+        src = open(det.__file__, encoding="utf-8").read()
+        self.assertIn("check_oom", src)
+        self.assertIn('"unknown", "eol"', src)  # syarat otomatis
+        # CLI flag
+        src_cli = open(
+            __import__("os").path.join(
+                __import__("os").path.dirname(det.__file__), "..", "php2shell.py"),
+            encoding="utf-8").read()
+        self.assertIn("--no-oom", src_cli)
 
 
 if __name__ == "__main__":

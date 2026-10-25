@@ -254,6 +254,30 @@ Membaca: versi PHP (header/X-Powered-By/error page), branch & fix-floor
 verdict (vulnerable/patched/EOL), status `session.upload_progress`,
 status `display_errors`. Zaranya GET biasa.
 
+**Deteksi aktif OOM (baru, v1.4.0)** — otomatis menyala bila verdict
+masih `unknown`/`eol` setelah probe pasif (versi PHP disembunyikan CDN
+atau target EOL). Metodologi mengikuti
+[assetnote/php2shell-scanner](https://github.com/assetnote/php2shell-scanner):
+control request + tiga probe multipart dengan array-key nested-62 level
+(1 → 8 → 20 MiB). Verdict `vulnerable` bila muncul salah satu:
+- fatal `Allowed memory size ... in Unknown` (OOM di dalam parser
+  multipart), atau
+- differential empty HTTP 500 (worker FPM mati di tengah), atau
+- 502/503/504 (worker abort di belakang front).
+
+Perlindungan false-positive: warning `POST Content-Length exceeds the
+limit` (lokasi juga `Unknown`, tapi itu post_max_size guard — bukan bug)
+TIDAK dihitung sebagai sinyal.
+
+```bash
+php2shell.py detect -u https://target.example/          # OOM otomatis (bila unknown/eol)
+php2shell.py detect -u https://target.example/ --no-oom  # matikan OOM probe
+```
+Catatan: bila `memory_limit` target > 20 MiB, OOM tidak tercapai →
+verdict tetap `inconclusive` dengan alasan eksplisit (bukan "not
+vulnerable"). Target dengan versi terbaca >= fix-floor tidak pernah
+diprobe OOM (hemat dan minim jejak).
+
 ### `preflight -u URL` — skor kesiapan + blocker
 
 ```bash
@@ -550,6 +574,8 @@ kode.
 | **Zer061** | Fork tempat `exploit.py` acuan byte-level kami diambil (sha256 `ea925683…`). |
 | **ikow** | Verifikator OOM CVE-2026-109618 (`poc/verify_oom_trigger.py`). |
 | **devploit** | Tabel 13 profil heap → `lib/build_support.py`, dan pola lisensi `bootstrap_upstream.py`. |
+| **Assetnote / Searchlight Cyber** (Shubham Shah, Adam Kues, Patrik Grobshäuser) | Metodologi deteksi aktif pada [`assetnote/php2shell-scanner`](https://github.com/assetnote/php2shell-scanner) + [write-up Searchlight](https://www.slcyber.io/research/high-fidelity-detection-mechanism-for-php2shell-cve-2026-109618-and-cve-2026-109619): probe OOM bertingkat 1/8/20 MiB dengan kunci nested-62, sinyal `fatal-in-parser`/`empty-500-differential`/`worker-abort`, dan catering `memory_limit` false-positive → diadopsi menjadi `lib/oomprobe.py` (mode `detect` otomatis; `--no-oom` untuk menonaktifkan). |
+| **calif.io** | [Write-up asli php2shell](https://calif.io/php2shell/) pertama yang merinci kondisi exploitasi mod_php & php-fpm — dirujuk oleh scanner assetnote sebagai basis triase. |
 | **PHP Group** | Advisori + perbaikan di 8.4.27 / 8.5.12. |
 
 Kalau ada kredit yang kurang atau keliru, buka issue — itu kalimat devploit,

@@ -72,7 +72,7 @@ CVE_CHOICES = ("CVE-2026-109618", "CVE-2026-109619")
 # 109618 "OOM corruption" adalah bug SATU request yang konsumennya shutdown
 # procedure; tool ini tidak mengimplementasikannya.
 CVE_SUPPORTED = ("CVE-2026-109619",)
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 
 # ---------------------------------------------------------------- banner ----
@@ -151,6 +151,7 @@ def _detect_one(url: str, t: Transport, args) -> dict:
         transport=t,
         check_upload_progress=not args.no_upload_progress,
         check_display_errors=not args.no_display_errors,
+        check_oom=False if getattr(args, "no_oom", False) else None,
     )
     p = preflight_mod.preflight(d)
     return {"url": url, "detect": d.as_dict(), "preflight": p.as_dict()}
@@ -675,6 +676,8 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--proxy", default=None, help="proxy http(s), mis. http://127.0.0.1:8080")
     common.add_argument("--audit", default=None, help="tulis audit JSONL ke file ini")
     common.add_argument("--no-upload-progress", action="store_true", help="lewati probe upload_progress")
+    common.add_argument("--no-oom", action="store_true",
+                        help="lewati OOM probe aktif (default: otomatis hanya bila verdict unknown/eol)")
     common.add_argument("--no-display-errors", action="store_true", help="lewati probe display_errors")
     common.add_argument("--json", default=None, help="path output JSON")
     common.add_argument("--csv", default=None, help="path output CSV")

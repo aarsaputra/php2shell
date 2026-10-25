@@ -201,7 +201,16 @@ def detect(
     transport: Transport | None = None,
     check_upload_progress: bool = True,
     check_display_errors: bool = True,
+    check_oom: bool | None = None,
 ) -> Detection:
+    """Deteksi php2shell.
+
+    check_oom (deteksi aktif OOM, metode assetnote/php2shell-scanner):
+      None (default) = OTOMATIS: aktif hanya bila verdict masih "unknown"
+        atau "eol" setelah probe pasif. Target yang sudah jelas patched
+        (versi >= fix-floor bocor dari header) tidak diproOOnya lagi.
+      True = selalu jalankan. False = jangan jalankan (CLI --no-oom).
+    """
     own = transport is None
     t = transport or Transport()
     d = Detection(url=url)
@@ -245,6 +254,45 @@ def detect(
             )
         if d.verdict == "eol" and d.upload_progress == "on":
             d.reason += " · upload_progress=ON (kombinasi terburuk)"
+
+        # ---- deteksi aktif OOM (metode assetnote php2shell-scanner) ----
+        # Otomatis: hanya bila verdict masih ambigu (unknown) atau target
+        # EOL yang bisa jadi rentan. Target "patched" jelas tidak diproOOnya.
+        run_oom = check_oom if check_oom is not None else (
+            d.verdict in ("unknown", "eol")
+        )
+        if run_oom:
+            from .oomprobe import oom_detect  # import lokal: hindari lingkar
+            oom = oom_detect(url, transport=t)
+            d.signals.append(
+                f"oom: verdict={oom.verdict} signal={oom.signal} "
+                f"probes={oom.probes_sent} ({oom.evidence})"
+            )
+            if oom.verdict == "vulnerable":
+                d.verdict = "vulnerable"
+                d.reason = (
+                    f"OOM probe aktif: {oom.signal} — {oom.evidence}"
+                )
+                if not d.php_version:
+                    # tandai bahwa verdict ini dari probe aktif, bukan versi
+                    d.branch = d.branch or "unknown-branch"
+            elif oom.verdict == "not_vulnerable" and d.verdict == "unknown":
+                d.verdict = "not_vulnerable"
+                d.reason = (
+                    "versi tidak bocor, tetapi probe OOM aktif menghasilkan "
+                    "respons normal (tidak ada fatal-in-parser/empty-500/"
+                    "abort) — target tidak merespons jalur php2shell"
+                )
+            elif oom.verdict == "inconclusive" and d.verdict == "unknown":
+                d.reason += (
+                    " · OOM probe tak konklusi (memory_limit target mungkin "
+                    "> 20 MiB; ulangi dengan --oom-max-mb lebih besar atau "
+                    "verifikasi via versi)"
+                )
+            elif oom.verdict == "blocked" and d.verdict == "unknown":
+                d.reason += " · OOM probe diblokir WAF (verdict dipertahankan)"
+            elif oom.verdict == "error" and d.verdict == "unknown":
+                d.reason += f" · OOM probe error: {oom.error}"
     except Exception as exc:  # noqa: BLE001
         d.error = f"{type(exc).__name__}: {exc}"
         d.verdict = "unknown"
