@@ -159,14 +159,16 @@ def _detect_one(url: str, t: Transport, args) -> dict:
 
 
 def _line(rec: dict) -> str:
+    from lib.color import cverdict
     d, p = rec["detect"], rec["preflight"]
     ver = d.get("php_version") or d.get("branch") or "?"
     tag = "READY" if p["ready"] else "  -  "
+    tag_c = cverdict("ready") if p["ready"] else tag
     lvl = {"rce": "RCE", "leak": "LEAK", "no": "NO"}.get(
         (p.get("support") or {}).get("level", ""), "?")
     return (
-        f"{d['verdict']:<10} | {ver:<8} | {lvl:<4} | up={d['upload_progress']:<7} | "
-        f"disp={d['display_errors']:<7} | score={p['score']:>2}/{p['max_score']} | {tag}"
+        f"{cverdict(d['verdict']):<10} | {ver:<8} | {lvl:<4} | up={d['upload_progress']:<7} | "
+        f"disp={d['display_errors']:<7} | score={p['score']:>2}/{p['max_score']} | {tag_c}"
     )
 
 
@@ -251,11 +253,12 @@ def cmd_detect(args) -> int:
         print("tidak ada target", file=sys.stderr)
         return 2
     records = []
+    from lib.color import cverdict
     for u in urls:
         rec = _detect_one(u, t, args)
         records.append(rec)
         d = rec["detect"]
-        print(f"  {d['verdict']:<10} {d['url']}")
+        print(f"  {cverdict(d['verdict']):<10} {d['url']}")
         if d["reason"]:
             print(f"             {d['reason']}")
         for s in d["signals"]:
@@ -280,8 +283,9 @@ def cmd_preflight(args) -> int:
     rec = _detect_one(url, t, args)
     t.close()
     d, p = rec["detect"], rec["preflight"]
+    from lib.color import cverdict, keyword
     print(f"URL          : {url}")
-    print(f"verdict      : {d['verdict']} — {d['reason']}")
+    print(f"verdict      : {cverdict(d['verdict'])} — {d['reason']}")
     print(f"PHP          : {d['php_version'] or 'tidak bocor'} (branch {d['branch'] or '?'})")
     print(f"upload_prog  : {d['upload_progress']}")
     print(f"display_err  : {d['display_errors']}")
@@ -290,7 +294,7 @@ def cmd_preflight(args) -> int:
         print(f"  {k:<15}: {v}")
     print()
     for b in p["blockers"]:
-        print(f"  BLOCKER: {b}")
+        print(f"  {keyword('BLOCKER', 'bad')}: {b}")
     for n in p["notes"]:
         print(f"  catatan: {n}")
     print()
@@ -301,7 +305,7 @@ def cmd_preflight(args) -> int:
     print(f"dukungan     : {lvl_label}")
     if sup.get("text"):
         print(f"               {sup['text']}")
-    print(f"siap exploit : {'YA' if p['ready'] else 'TIDAK'}")
+    print(f"siap exploit : {keyword('YA', 'bad') if p['ready'] else keyword('TIDAK', 'ok')}")
     if args.json:
         print(f"json: {reporter.write_json(args.json, [rec], {'mode': 'preflight', 'cve': CVE_IDS})}")
     return 0
@@ -537,8 +541,15 @@ def cmd_exploit(args) -> int:
     _run_exploits([rec], args)
     res = rec.get("exploit", {})
     print()
-    print(f"proof : {res.get('proof') or '-'}")
-    print(f"error : {res.get('error') or '-'}")
+    from lib.color import cverdict, keyword
+    proof_txt = res.get("proof") or "-"
+    err_txt = res.get("error") or "-"
+    if res.get("success"):
+        print(f"proof : {keyword(proof_txt, 'ok')}")
+        print(f"error : -")
+    else:
+        print(f"proof : {proof_txt}")
+        print(f"error : {cverdict(err_txt) if err_txt != '-' else '-'}")
     if args.json:
         print(f"json: {reporter.write_json(args.json, [rec], {'mode': 'exploit', 'cve': args.cve, 'chain_engine': 'lib/chain.py (internal)'})}")
     return 0 if res.get("success") else 1
@@ -681,6 +692,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="lewati OOM probe aktif (default: otomatis hanya bila verdict unknown/eol)")
     common.add_argument("--sapi", default="auto", choices=["auto", "fpm", "mod_php"],
                         help="gating sinyal OOM probe: auto (gabungan, default) | fpm | mod_php")
+    common.add_argument("--no-color", action="store_true",
+                        help="matikan warna output (sekadar: auto-mati bila bukan TTY / NO_COLOR)")
     common.add_argument("--no-display-errors", action="store_true", help="lewati probe display_errors")
     common.add_argument("--json", default=None, help="path output JSON")
     common.add_argument("--csv", default=None, help="path output CSV")
@@ -790,6 +803,11 @@ def main(argv: list[str] | None = None) -> int:
     if not args.mode:
         print(banner_mod.splash())
         return 0
+
+    # warna: --no-color mematikan; jika tidak, auto (TTY + NO_COLOR+hormat)
+    if getattr(args, "no_color", False):
+        from lib import color as _color
+        _color.enable(False)
 
     # Gagal cepat: jangan biarkan pengguna menunggu rantai panjang untuk CVE
     # yang TIDAK diimplementasikan tool ini. Exit 2 karena ini kesalahan

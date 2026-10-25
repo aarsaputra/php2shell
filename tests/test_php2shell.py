@@ -14,10 +14,19 @@ import sys
 import tempfile
 import unittest
 
-VERSI_DIHARAPKAN = "1.4.0"
 TOOLKIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLI = os.path.join(TOOLKIT, "php2shell.py")
 PY = sys.executable
+
+
+def _read_version() -> str:
+    """Baca VERSION dari php2shell.py — tes anti-regresi tidak meng-hardcode."""
+    m = re.search(r'^VERSION\s*=\s*["\']([^"\']+)["\']',
+                  open(CLI, encoding="utf-8").read(), re.M)
+    return m.group(1) if m else "0.0.0"
+
+
+VERSI_DIHARAPKAN = _read_version()
 
 
 def run(*args, timeout=120):
