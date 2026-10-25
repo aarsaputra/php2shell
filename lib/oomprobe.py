@@ -16,6 +16,16 @@ Sinyal VULNERABLE (apapun yang pertama cocok):
   S2 : differential-empty-500 — control menghasilkan body, probe
        menjawab HTTP 500 dengan body kosong (worker FPM mati di tengah).
   S3 : worker abort — probe menjawab 502/503/504 padahal control sehat.
+  S4 : empty-200 — probe menjawab HTTP 200 body kosong padahal control
+       ber-body (varian FPM worker mati; front tetap menjawab).
+
+Gating SAPI (mengikuti scanner resmi assetnote):
+  S3/S4 hanya sah untuk sapi "fpm"/"auto"; di "mod_php" kematian worker
+  membawa Apache turun dan tidak menghasilkan response front-server.
+
+Fitur lain yang mengikuti scanner resmi:
+  - control body ber-marker "phpMyAdmin" → seluruh pengujian dialihkan
+    ke /show_config_errors.php (path config-error phpMyAdmin).
 
 Bukan sinyal:
   - 4xx reject WAF (400/403/413/429/431/dst.) → "blocked", bukan verdict.
@@ -63,6 +73,16 @@ _FATAL_LOC_UNKNOWN = b"Unknown"
 # parser multipart jalan; warning-nya juga berlokasi "Unknown" sehingga
 # tanpa saringan ini bisa salah dipercaya sebagai S1.
 _POSTLEN_MARKER = b"POST Content-Length of"
+
+# phpMyAdmin: control body yang memuat marker ini dipindah ke path khusus
+# (config file bisa terekspos di sana; mengikuti perilaku scanner assetnote).
+PHPMYADMIN_MARKER = b"phpMyAdmin"
+PHPMYADMIN_PATH = "/show_config_errors.php"
+
+# Sinyal worker-abort hanya bermakna di belakang front-server (FPM): mod_php
+# yang mati membawa proses Apache turun dan tidak memproduksi 502/503/504
+# maupun 200-kosong dari handler lain. Mengikuti gating SAPI scanner resmi.
+FPM_ABORT_STATUSES = (502, 503, 504)
 
 
 @dataclass
@@ -112,8 +132,14 @@ def _build_payload(size_mb: int) -> bytes:
     return b"".join(parts)
 
 
-def _classify_response(resp, control_body_len: int) -> tuple[str, str]:
-    """Petakan satu response probe ke (verdict, signal) menurut sinyal S1-S3."""
+def _classify_response(resp, control_body_len: int, sapi: str = "auto") -> tuple[str, str]:
+    """Petakan satu response probe ke (verdict, signal) menurut sinyal S1-S4.
+
+    sapi: "auto" (aturan gabungan mod_php+FPM, default) | "mod_php" | "fpm".
+    Sinyal abort (502/503/504, 200-kosong) hanya sah untuk FPM/auto — di
+    mod_php kematian worker membawa Apache ikut turun, tidak menghasilkan
+    response front-server. Sama seperti gating scanner resmi assetnote.
+    """
     body_b = (resp.body or "").encode("utf-8", "replace")
     body_len = len(body_b)
     status = resp.status
@@ -140,9 +166,15 @@ def _classify_response(resp, control_body_len: int) -> tuple[str, str]:
     if status == 500 and body_len > 0:
         return "inconclusive", "nonempty_500"
 
-    # S3: 502/503/504 = worker mati di belakang front-server
-    if status in (502, 503, 504):
-        return "vulnerable", "worker_abort"
+    # S3/S4: sinyal abort hanya untuk FPM/auto (worker mati di belakang front)
+    if sapi != "mod_php":
+        # S3: 502/503/504 = worker mati di belakang front-server
+        if status in FPM_ABORT_STATUSES:
+            return "vulnerable", "worker_abort"
+        # S4: 200 dengan body kosong padahal control ber-body =
+        # worker FPM mati di tengah request, front tetap menjawab 200
+        if status == 200 and control_body_len > 0 and body_len == 0:
+            return "vulnerable", "empty_200"
 
     return "inconclusive", "no_signal"
 
@@ -153,8 +185,11 @@ def oom_detect(
     proxy: str | None = None,
     profile: str = "chrome",
     timeout: int = 30,
+    sapi: str = "auto",
 ) -> OOMResult:
     """Deteksi aktif php2shell: control + 3 probe OOM nested-62.
+
+    sapi: "auto" (gabungan aturan mod_php+FPM, default) | "mod_php" | "fpm".
 
     Transport dibuat internal dengan retries=0 (payload besar tidak boleh
     dikirim ulang otomatis). Bila `transport` diberikan dari luar, retries
@@ -193,13 +228,40 @@ def oom_detect(
             return res
 
         ctrl_body_len = len((control.body or "").encode("utf-8", "replace"))
+        ctrl_body_bytes = (control.body or "").encode("utf-8", "replace")
+
+        # ---- 1b. phpMyAdmin: alihkan ke /show_config_errors.php ----
+        target_url = url
+        if PHPMYADMIN_MARKER in ctrl_body_bytes:
+            from urllib.parse import urlsplit, urlunsplit
+
+            parts = urlsplit(url)
+            target_url = urlunsplit((parts.scheme, parts.netloc, PHPMYADMIN_PATH, "", ""))
+            control = t.post(
+                target_url,
+                data=c_body,
+                headers={
+                    "Content-Type": 'multipart/form-data; boundary="x"',
+                    "Content-Length": str(len(c_body)),
+                },
+            )
+            if control.error:
+                res.verdict = "error"
+                res.error = f"control phpMyAdmin: {control.error}"
+                return res
+            if control.status >= 500:
+                res.verdict = "inconclusive"
+                res.signal = "control_unhealthy"
+                res.evidence = f"control phpMyAdmin HTTP {control.status} sebelum probe"
+                return res
+            ctrl_body_len = len((control.body or "").encode("utf-8", "replace"))
 
         # ---- 2. tiga probe OOM bertingkat ----
         for mb in PROBES_MB:
             payload = _build_payload(mb)
             body = _multipart_body(_nested_name(), payload, boundary="x")
             r = t.post(
-                url,
+                target_url,
                 data=body,
                 headers={
                     "Content-Type": 'multipart/form-data; boundary="x"',
@@ -221,7 +283,7 @@ def oom_detect(
                     res.evidence = f"probe {mb}MiB: {r.error}"
                 continue
 
-            verdict, signal = _classify_response(r, ctrl_body_len)
+            verdict, signal = _classify_response(r, ctrl_body_len, sapi=sapi)
             evid = (
                 f"probe {mb}MiB → HTTP {r.status}, body {len(r.body or '')} B"
             )

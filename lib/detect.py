@@ -202,6 +202,7 @@ def detect(
     check_upload_progress: bool = True,
     check_display_errors: bool = True,
     check_oom: bool | None = None,
+    sapi: str = "auto",
 ) -> Detection:
     """Deteksi php2shell.
 
@@ -210,6 +211,8 @@ def detect(
         atau "eol" setelah probe pasif. Target yang sudah jelas patched
         (versi >= fix-floor bocor dari header) tidak diproOOnya lagi.
       True = selalu jalankan. False = jangan jalankan (CLI --no-oom).
+    sapi: "auto" (default; aturan gabungan mod_php+FPM) | "fpm" | "mod_php".
+      Meneruskan gating sinyal-abort ke OOM probe aktif.
     """
     own = transport is None
     t = transport or Transport()
@@ -263,7 +266,7 @@ def detect(
         )
         if run_oom:
             from .oomprobe import oom_detect  # import lokal: hindari lingkar
-            oom = oom_detect(url, transport=t)
+            oom = oom_detect(url, transport=t, sapi=sapi)
             d.signals.append(
                 f"oom: verdict={oom.verdict} signal={oom.signal} "
                 f"probes={oom.probes_sent} ({oom.evidence})"
