@@ -6,7 +6,7 @@ Untuk bug bounty: kebanyakan RoE melarang shell tertinggal — cukup
 
 ---
 
-## 0. Jawaban jujur: sudah dicoba di semua versi rentan?
+## 0. Data cakupan: sudah dicoba di semua versi rentan?
 
 TIDAK SEMUA — data `builds` (5 RCE / 3 LEAK / 5 NO):
 
@@ -127,4 +127,5 @@ PY
 ---
 
 Larangan tetap: JANGAN pakai di target yang bukan milikmu/berotorisasi.
-Kegagalan jujur (BLIND/HEAP_LEAK_FAILED) = perilaku aman tool, bukan bug.
+Status BLIND/HEAP_LEAK_FAILED berarti perintah tidak dieksekusi atau tidak
+ada kanal bukti — itu hasil pengukuran tool, bukan bug.

@@ -66,7 +66,7 @@ skor     : 75/90  (READY)
 - Probe aktif (upload_progress, OOM) jalan otomatis HANYA bila versi tidak
   bocor; matikan dengan `--no-oom` / `--no-upload-progress`.
 - Bila target di balik CDN dan versi tak bocor → verdict `unknown` +
-  penjelasan jujur (bukan dugaan).
+  penjelasan berbasis data (bukan dugaan).
 - Pilih SAPI bila tahu: `--sapi auto|fpm|mod_php` (mengubah aturan sinyal
   OOM: 502/503/504 & 200-kosong hanya sah untuk fpm).
 
@@ -95,7 +95,8 @@ python php2shell.py exploit -u <URL> --yes --proof-file p1 --allow-cmd uname
 - `--force` untuk tetap lanjut walau preflight tak siap (jarang perlu).
 - `--zif-offset/--dtor-offset/--htdata-offset/--offsets-file` untuk build
   non-bookworm (lihat §6 builds / RUNBOOK).
-- Kegagalan jujur: `HEAP_LEAK_FAILED`, `BLIND` = tool berhenti, bukan muluk.
+- Hasil `HEAP_LEAK_FAILED` / `BLIND`: tool berhenti tanpa klaim; itu data
+  pengukuran, bukan status bohong.
 
 ## 6. `shell` — generator webshell (untuk lab/otorisasi)
 
@@ -206,4 +207,5 @@ docker stop p2s-rce3    # matikan lab bila selesai
 - dash menelan digit sebelum `>>` (fd-redirect) → `printf 'C' >>file`.
 - stage3 probabilistik → verifikasi per-char (sudah otomatis di tool).
 - PHP 8 strict → `$_REQUEST['c']` (kutip!) — tanpa ini Fatal error.
-- Kegagalan jujur (BLIND, HEAP_LEAK_FAILED) = fitur keselamatan, bukan bug.
+- Hasil `BLIND` / `HEAP_LEAK_FAILED` berarti perintah tidak dieksekusi atau
+  kanal bukti tidak tersedia — data pengukuran tool, bukan bug.

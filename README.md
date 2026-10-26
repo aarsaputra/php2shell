@@ -695,7 +695,7 @@ Request yang dikirim ini sengaja dibikin **kelihatan seperti browser asli**, buk
 php2shell exploit -u <url> --ja3 safari --proxy http://127.0.0.1:8080 --delay 3 --yes
 ```
 
-**Jujur soal batasnya:** ini lolos deteksi *script-vs-browser* klasik (JA3, header, pola timing). Kalau target pakai bot-management berat (Cloudflare Bot Management, Akamai) yang mengecek HTTP/2 frame-order, cookie history, bahkan render JS — itu perlombaan senjata lain dan tool ini tidak mengklaim menang di sana. Untuk lab PHP prefork & mayoritas server biasa: cukup aman. 😉
+**Batas terukurnya:** ini lolos deteksi *script-vs-browser* klasik (JA3, header, pola timing). Kalau target pakai bot-management berat (Cloudflare Bot Management, Akamai) yang mengecek HTTP/2 frame-order, cookie history, bahkan render JS — itu perlombaan senjata lain dan tool ini tidak mengklaim menang di sana. Untuk lab PHP prefork & mayoritas server biasa: cukup aman. 😉
 
 ---
 
