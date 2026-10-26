@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://aarsaputra.github.io/php2shell/sitemap.xml

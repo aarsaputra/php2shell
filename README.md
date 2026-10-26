@@ -14,10 +14,13 @@
 [![Platform](https://img.shields.io/badge/platform-Linux-blue?style=flat-square&logo=linux&logoColor=white)](#-the-5-lab-requirements)
 [![License: GPL‑3.0](https://img.shields.io/badge/license-GPL--3.0-informational?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/lab-docker%20one--command-2496ED?style=flat-square&logo=docker&logoColor=white)](#-one-command-lab)
+[![Landing Page](https://img.shields.io/badge/landing%20page-web%2Findex.html-00ff88?style=flat-square)](web/index.html)
 
-[Install](#-install) · [Quick start](#-quick-start) · [Lab vs Live](#-lab-target-vs-live-target-baca-ini-sebelum-menjalankan) · [Modes](#-modes) · [Sumber repo](#-sumber-repo-bukan-fork-tapi-turunan-beberapa-repo) · [Kredit riset](#kredit-riset--siapa-menemukan-siapa-menuliskan) · [How it works](#-how-it-works) · [Stealth](#-stealth-anti-bot-detection) · [FAQ](#-faq) · [Disclaimer](#-disclaimer-authorized-use-only)
+[Landing Page](web/index.html) · [Install](#-install) · [Quick start](#-quick-start) · [Lab vs Live](#-lab-target-vs-live-target-baca-ini-sebelum-menjalankan) · [Modes](#-modes) · [Sumber repo](#-sumber-repo-bukan-fork-tapi-turunan-beberapa-repo) · [Kredit riset](#kredit-riset--siapa-menemukan-siapa-menuliskan) · [How it works](#-how-it-works) · [Stealth](#-stealth-anti-bot-detection) · [FAQ](#-faq) · [Disclaimer](#-disclaimer-authorized-use-only)
 
 </div>
+
+> 🌐 **Landing Page & Web UI**: Dokumentasi interaktif dan simulasi tersedia di [`web/index.html`](web/index.html). Halaman statis ini bisa diakses lokal via `python3 -m http.server` di folder `web/`.
 
 ---
 
