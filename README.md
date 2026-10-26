@@ -780,6 +780,10 @@ commands, no shells, no exfil primitives) reflects that scope.
 
 ## ❖ Repository layout
 
+> 📘 **Panduan pemakaian:** [`docs/TUTORIAL.md`](docs/TUTORIAL.md) — tutorial
+> setiap fitur langkah-demi-langkah (semuanya diuji live), termasuk
+> RCE → up-shell. Runbook teknis: [`docs/RUNBOOK_RCE_UPSHELL.md`](docs/RUNBOOK_RCE_UPSHELL.md).
+
 ```text
 php2shell/
 ├── php2shell.py          single CLI: scan/detect/preflight/exploit/shell
