@@ -289,8 +289,8 @@ def detect(
             elif oom.verdict == "inconclusive" and d.verdict == "unknown":
                 d.reason += (
                     " · OOM probe tak konklusi (memory_limit target mungkin "
-                    "> 20 MiB; ulangi dengan --oom-max-mb lebih besar atau "
-                    "verifikasi via versi)"
+                    "> 20 MiB; naikkan PROBES_MB di lib/oomprobe.py jika "
+                    "berwenang, atau verifikasi via versi/fix-floor)"
                 )
             elif oom.verdict == "blocked" and d.verdict == "unknown":
                 d.reason += " · OOM probe diblokir WAF (verdict dipertahankan)"
