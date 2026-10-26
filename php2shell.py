@@ -700,7 +700,8 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("-v", "--verbose", action="store_true", help="tampilkan setiap request")
     common.add_argument("--check-version", action="store_true",
                         help="cek versi terbaru di GitHub sebelum menjalankan mode")
-
+    common.add_argument("--no-check-updates", action="store_true",
+                        help="matikan notifikasi versi baru otomatis (default: on, cache 1 jam)")
     ap = argparse.ArgumentParser(
         prog="php2shell",
         parents=[common],
@@ -838,6 +839,18 @@ def main(argv: list[str] | None = None) -> int:
         if vc.update_available:
             print(f"  -> update: git -C {ROOT} pull --ff-only   ({vc.url})")
         print()
+    elif getattr(args, "check_updates", True) and args.mode not in ("version",):
+        # Notifikasi ringan (cache 1 jam): 1 baris bila ada versi baru.
+        # Tidak pernah mengeksekusi update — keputusan tetap milik operator.
+        try:
+            vc = version_mod.check(VERSION, use_cache=True)
+            if vc.update_available:
+                from lib.color import keyword
+                print(f"  {keyword(f'[BARU] v{vc.remote} tersedia', 'warn')} — "
+                      f"perbarui: git -C {ROOT} pull --ff-only")
+                print()
+        except Exception:  # noqa: BLE001 — gagal-aman: jangan ganggu mode utama
+            pass
 
     try:
         if args.mode == "scan":
