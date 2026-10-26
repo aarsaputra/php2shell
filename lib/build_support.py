@@ -20,8 +20,8 @@ Sumber data (semua publik, diverifikasi ulang 2026-10-24)
    MaxRequestWorkers=150 (worker pinning).
 3. Lab kita sendiri — php:8.4.26-apache amd64: PROOF uid=33(www-data).
 
-Batas kejujuran
----------------
+Batas data
+----------
 `rce` di sini berarti "sudah dibuktikan orang lain / kita di build persis itu".
 `leak` berarti "stage 1-2 jalan, stage 3 belum terbukti".
 `no` berarti "belum terbukti", BUKAN "mustahil" — penulis devploit menulis
@@ -182,7 +182,7 @@ def is_eol(version: str | None) -> bool:
 
 
 def expectation_text(version: str | None, arch: str | None = None) -> str:
-    """Kalimat siap-cetak untuk operator. Bahasa Indonesia, jujur, singkat."""
+    """Kalimat siap-cetak untuk operator. Bahasa Indonesia, berbasis data, singkat."""
     b = lookup(version, arch)
     if b is None:
         if is_eol(version):

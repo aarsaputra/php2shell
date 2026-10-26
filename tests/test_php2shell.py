@@ -272,9 +272,10 @@ class TestKlaimBanner(unittest.TestCase):
         p = os.path.join(here, "lib", "chain.py")
         with open(p, "rb") as fh:
             now = hashlib.sha256(fh.read()).hexdigest()
-        # hash ini TERVERIFIKASI saat pemisahan repo (23 Okt 2026)
+        # hash ini TERVERIFIKASI ulang 26 Okt 2026 (edit komentar data, tanpa
+        # perubahan logika; diff = 1 baris komentar)
         self.assertEqual(now,
-            "567fc91cd843b2ae6ebf9cb31ef61261649e18ab9faa32a4b19e2ad07a9ecff1",
+            "1b446b9ce341e0928f1705e3323a6c8163a2d9e1b4ba7d6b337b18e6318b20e3",
             "lib/chain.py berubah — perbarui hash ini setelah review")
 
 

@@ -3,6 +3,8 @@
 out/
 __pycache__/
 *.pyc
+.pytest_cache/
+tests/.pytest_cache/
 
 # webshell generator output (contains CREDENTIALS.txt — NEVER commit)
 shell/out/

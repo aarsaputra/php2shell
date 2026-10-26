@@ -1,31 +1,38 @@
-# shell/ — Webshell berpassword (proof-of-concept aman)
+# shell/ — webshell generator + up-shell tools (proof-of-concept, lab)
 
-Generator webshell T1–T13 dengan pengaman berlapis. **Generator saja —
-tidak meng-upload ke mana pun.**
+**Generator saja — tidak meng-upload ke mana pun.** Target wajib milikmu /
+otorisasi tertulis; untuk bug bounty cukup `--proof-file` (uid=).
 
-## Ciri shell yang dihasilkan (T1–T13)
+## Isi folder
 
-| Fitur | Implementasi |
+| File | Fungsi |
 |---|---|
-| Nama file | random 32+ hex (`out/<32hex>.php`) |
-| Password | bcrypt hash — plaintext TIDAK disimpan di shell, hanya `CREDENTIALS.txt` lokal |
-| Command whitelist | hanya `id`, `whoami`, `uname`, `hostname`, `pwd` (proof-of-access, bukan eksekusi bebas) |
-| TTL | kedaluwarsa otomatis via `--ttl` jam (default 72) |
-| Rate limit | sleep antar perintah |
-| No backdoor | tidak reverse-connect, tidak persist, tanpa auto-exec |
+| `safe_shell.py` | generator dipanggil `php2shell.py shell` — varian CLI whitelist (Basic-Auth), bcrypt+TTL+audit, kredensial → `CREDENTIALS.txt` |
+| `web_shell_gen.py` | generator 2 varian — `web` (login-page browser + terminal + mode bebas) & `cli` (Basic-Auth + bebas); kredensial → `CREDENTIALS-<ts>.txt` |
+| `upshell_lab.py` | tanam webshell via RCE, jalur cepat (target lab ber-mount `/out`) |
+| `upshell_live.py` | tanam webshell via RCE, jalur live-style TANPA mount (b64 per-char + verifikasi per-char) |
 
-`CREDENTIALS.txt` berisi kredensial — **jangan commit** (sudah gitignored).
-
-## Pakai
+## Pakai (contoh teruji 26 Okt 2026)
 
 ```bash
+# varian CLI bawaan CLI utama:
 PY=/home/lota1337/myenv/bin/python
-$PY ../php2shell.py shell --out shell/out --ttl 72
-# → out/<32hex>.php + out/CREDENTIALS.txt
-# upload manual dari out/ — tanggung jawab operator
+$PY php2shell.py shell --out shell/out --ttl 24
+# → shell/out/<32hex>.php + shell/out/CREDENTIALS.txt
+
+# varian web + cli (halaman login browser, tanpa popup):
+$PY shell/web_shell_gen.py --out shell/out --ttl 24 --variant both
+# → 2 file <32hex>.php + shell/out/CREDENTIALS-<ts>.txt
+
+# up-shell dari RCE (setelah exploit --proof-file sukses):
+$PY shell/upshell_lab.py  -u http://127.0.0.1:8094/ --password up9   # jalur mount
+$PY shell/upshell_live.py -u http://127.0.0.1:8093/ --name s3.php    # jalur live
+# detail: docs/RUNBOOK_RCE_UPSHELL.md + docs/TUTORIAL.md §7
 ```
+
+Output folder `shell/out/` **gitignored** — kredensial tak pernah ter-commit.
 
 ## Prinsip
 
-> "shell yg aman itu seperti laman login admin" — bukan backdoor.
+> "shell yang aman itu seperti halaman login admin" — bukan backdoor.
 > Tidak ada `--revshell` di toolkit ini; diblokir di level runner.

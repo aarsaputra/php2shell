@@ -116,7 +116,7 @@ PROFILES = {
 # Bukti crash 109618 di lab memakai verifikator asli ikow/php2shell-poc
 # (verify_oom_trigger.py), lihat laporan uji docker.
 #
-# Kejujuran yang wajib dibaca sebelum memakai profil di bawah:
+# Catatan data yang wajib dibaca sebelum memakai profil di bawah:
 #   - Rantai 3-tahap tool ini MENARGETKAN 109619 (producer→fatal→stale state→
 #     consumer upload_progress di worker sama) — sesuai advisory
 #     GHSA-6wmf-4rv5-p3rp: "both the producing operation and fatal error can
