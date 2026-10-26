@@ -72,7 +72,13 @@ MITIGATION_WARNINGS = {
         "gagal, longjmp() tetap bisa jalan saat memori request masih reachable."
     ),
     "session.upload_progress.enabled=0": (
-        "Hanya menutup jalur 109618 (+115560). TIDAK menutup 109619."
+        "Hanya menutup jalur 109618 (+115560). TIDAK menutup 109619. "
+        "Untuk 109619, php.net advisory 2026-10-21 menyebut setelan ini sebagai "
+        "mitigasi yang memblokir jalur session yang terkonfirmasi (bukan semua varian)."
+    ),
+    "fatal_error_backtraces=0": (
+        "Hanya PHP 8.5. Mematikan satu jalur fatal-backtrace pada 109619; "
+        "bukan mitigasi umum, sisanya tetap perlu upgrade."
     ),
     "waf": "Mengurangi, tidak menghilangkan. CISA: WAF 'may provide some protection'.",
 }
@@ -121,7 +127,8 @@ def warnings_for(verdict: str, patched_release_day: str | None = None) -> list[s
 def describe() -> str:
     """Ringkasan teks untuk mode `version` / `--advisories`."""
     lines = [
-        "ADVISORY PASCA-RILIS (diverifikasi 2026-10-24, sumber primer)",
+        "ADVISORY PASCA-RILIS (diverifikasi 2026-10-24; dicek ulang 2026-10-26 — "
+        "belum ada rilis PHP baru, sumber primer)",
         "",
         f"1. {REPACK_NOTICE}",
         "",
@@ -133,6 +140,11 @@ def describe() -> str:
         f"   patch    : TIDAK ditutup 8.5.12/8.4.27/8.3.36/8.2.35",
         f"   ITW      : {'ya' if CVE_115560['itw_exploited'] else 'belum dilaporkan'}",
         f"   catatan  : {CVE_115560['note']}",
+        "",
+        "   TIDAK ADA rilis PHP baru per 2026-10-26: 8.5.12 / 8.4.27 / 8.3.36 /",
+        "   8.2.35 masih versi terbaru (php.net archive + ChangeLog-8 dicek).",
+        "   8.6.0 RC4 masih RC; advisory lengkap 115560 dijanjikan di rilis reguler",
+        "   berikutnya — cek ulang setelah rilis itu, fix-floor bisa berubah.",
         "",
         "3. Mitigasi yang sering disalahpahami:",
     ]
