@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>php2shell — Unauthenticated RCE toolkit for PHP (CVE-2026-109619/109618)</title>
+<meta name="description" content="php2shell: toolkit RCE PHP berbasis rantai HTTP murni — deteksi, preflight, exploit proof-of-access, generator webshell, up-shell. Proof-of-access by design.">
+<style>
+  :root{--bg:#0b0e14;--fg:#e6e6e6;--mut:#9aa4b2;--acc:#e5484d;--acc2:#3dd68c;--card:#12161f;--line:#232a36}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,Segoe UI,Roboto,sans-serif}
+  a{color:#6cb6ff;text-decoration:none}a:hover{text-decoration:underline}
+  .wrap{max-width:900px;margin:0 auto;padding:48px 20px}
+  .flag{font-family:ui-monospace,Consolas,monospace;white-space:pre;color:var(--acc);font-size:11px;line-height:1.15}
+  h1{font-size:26px;margin:18px 0 6px}
+  .sub{color:var(--mut);margin-bottom:24px}
+  .badges span{display:inline-block;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:2px 10px;margin:0 6px 6px 0;font-size:12.5px;color:var(--mut)}
+  .badges b{color:var(--acc2);font-weight:600}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:26px 0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .card h3{font-size:15px;margin-bottom:6px;color:var(--acc)}
+  .card p{font-size:14px;color:var(--mut)}
+  pre{background:#0d1117;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-size:13.5px;line-height:1.5;margin:14px 0}
+  code{font-family:ui-monospace,Consolas,monospace}
+  .cmt{color:#7d8590}.out{color:var(--acc2)}
+  h2{font-size:19px;margin:30px 0 10px}
+  ul{margin:8px 0 8px 20px}
+  li{margin:4px 0;color:var(--mut)}li b{color:var(--fg)}
+  .warn{border:1px solid #4a3b1e;background:#1a160c;border-radius:10px;padding:12px 16px;font-size:14px;color:#d7b96a;margin:22px 0}
+  footer{margin-top:40px;color:#556072;font-size:13px;border-top:1px solid var(--line);padding-top:16px}
+  .btn{display:inline-block;background:var(--acc);color:#fff;border-radius:8px;padding:9px 18px;font-weight:600;margin:4px 8px 4px 0}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
+  @media(max-width:640px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="flag"> ____  _   _ ____ ____  ____  _   _ _____ _
+|  _ \| | | | ____|  _ \/ ___|| | | |_   _| |
+| |_) | |_| | |_) | |_) \___ \| | | | | | | |
+|  __/|  _  |  __/|  _ < ___) | |_| | | | |_|
+|_|   |_| |_|_|   |_| \_\____/ \___/  |_|(_)</div>
+
+<h1>php2shell <span style="color:var(--mut);font-weight:400">v1.5.1</span></h1>
+<div class="sub">Unauthenticated RCE chain for PHP 5.4 → 8.4.26 — pure-HTTP, JA3 impersonation, proof-of-access by design.</div>
+<div class="badges">
+  <span>CVE <b>2026-109619</b></span>
+  <span>CVE <b>2026-109618</b> (deteksi)</span>
+  <span>fix-floor <b>8.2.35 / 8.3.36 / 8.4.27 / 8.5.12</b></span>
+  <span>tests <b>118 passed</b></span>
+  <span>⭐ 47 · 🍴 32</span>
+</div>
+
+<div style="margin:22px 0">
+  <a class="btn" href="https://github.com/aarsaputra/php2shell">GitHub repo</a>
+  <a class="btn ghost" href="TUTORIAL.md">Tutorial (semua fitur)</a>
+  <a class="btn ghost" href="RUNBOOK_RCE_UPSHELL.md">Runbook RCE → up-shell</a>
+</div>
+
+<h2>Apa ini</h2>
+<p style="color:var(--mut)">Rantai 3-tahap penuh-HTTP: <b>heap leak</b> → <b>libphp base leak</b> → <b>HashTable palsu → zif_system</b> (CVE-2026-109619, stale global state antar-request pada worker yang sama). Tanpa file, tanpa endpoint khusus, tanpa crypto di sisi klien — hanya multipart POST.</p>
+
+<div class="grid">
+  <div class="card"><h3>detect</h3><p>Versi PHP, SAPI, upload_progress, display_errors — read-only; OOM probe otomatis bila versi tak bocor.</p></div>
+  <div class="card"><h3>preflight</h3><p>Skor kesiapan 0–90 + BLOCKER eksplisit sebelum exploit.</p></div>
+  <div class="card"><h3>exploit</h3><p>RCE terbukti dengan bukti (<code>--proof-file</code>: <i>uid=33(www-data)</i>), carrier 14 byte, whitelist perintah.</p></div>
+  <div class="card"><h3>shell &amp; up-shell</h3><p>Generator webshell (bcrypt, TTL, audit) + pemasangan otomatis lewat RCE (dua jalur, verifikasi per-karakter).</p></div>
+</div>
+
+<h2>Quickstart</h2>
+<pre><code><span class="cmt"># pasang (venv + deps + smoke)</span>
+git clone https://github.com/aarsaputra/php2shell && cd php2shell
+./install.sh && <span class="cmt">source .venv/bin/activate</span>
+
+<span class="cmt"># kenali target (read-only)</span>
+python php2shell.py detect -u http://target-lab/
+
+<span class="cmt"># bukti RCE — berhenti di sini untuk bug bounty</span>
+python php2shell.py exploit -u http://target-lab/ --yes --proof-file p1
+<span class="out"># PROOF (11.7s): uid=33(www-data) gid=33(www-data)</span></code></pre>
+
+<h2>Dukungan build (data terukur)</h2>
+<ul>
+  <li><b>RCE terbukti (5)</b>: 8.4.26 amd64 (profil bookworm), 8.5.11 amd64/aarch64, 8.5.10 aarch64, 8.4.25 aarch64*</li>
+  <li><b>Leak saja (3)</b>: 8.5.0, 8.3.35, 8.3.33 — stage-3 belum jalan</li>
+  <li><b>Belum terbukti (5)</b>: 8.3.0, 8.2.34, 8.1.34, 8.0.30, 7.4.33 — UAF ada, bentuk leak beda</li>
+</ul>
+<p style="color:var(--mut);font-size:14px">* probabilistik, butuh retry. Detail: <a href="RUNBOOK_RCE_UPSHELL.md">RUNBOOK §0</a>.</p>
+
+<div class="warn"><b>Etika:</b> hanya untuk sistem milik sendiri / otorisasi tertulis. Bug bounty: hampir semua RoE melarang webshell tertinggal — cukup bukti RCE (<code>--proof-file</code>), berhenti di situ. Status <code>BLIND</code>/<code>HEAP_LEAK_FAILED</code> = hasil pengukuran tool (perintah tidak dieksekusi / tak ada kanal bukti), bukan bug.</div>
+
+<h2>Dokumentasi</h2>
+<ul>
+  <li><a href="TUTORIAL.md">docs/TUTORIAL.md</a> — semua fitur langkah-demi-langkah (diuji live)</li>
+  <li><a href="RUNBOOK_RCE_UPSHELL.md">docs/RUNBOOK_RCE_UPSHELL.md</a> — dari RCE ke webshell, dua jalur</li>
+  <li><a href="https://github.com/aarsaputra/php2shell/blob/main/README.md">README.md</a> — referensi lengkap CLI</li>
+  <li><a href="https://github.com/aarsaputra/php2shell/security/policy">SECURITY.md</a> — laporan kerentanan tool ini</li>
+</ul>
+
+<footer>
+  Reproduction, tooling &amp; hardening: <b>aarsaputra</b> · Advisory: PHP Group — GHSA-w8hw-w9fx-j79w / GHSA-6wmf-4rv5-p3rp · Credits: devploit/php2shell, ikow/php2shell-poc, assetnote &amp; Searchlight Cyber (scanner research), 9bie (ASLR bypass).<br>
+  © 2026 — disediakan apa adanya, untuk pengujian berotorisasi.
+</footer>
+
+</div>
+</body>
+</html>
