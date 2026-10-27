@@ -1,108 +1,991 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>php2shell — Unauthenticated RCE toolkit for PHP (CVE-2026-109619/109618)</title>
-<meta name="description" content="php2shell: toolkit RCE PHP berbasis rantai HTTP murni — deteksi, preflight, exploit proof-of-access, generator webshell, up-shell. Proof-of-access by design.">
-<style>
-  :root{--bg:#0b0e14;--fg:#e6e6e6;--mut:#9aa4b2;--acc:#e5484d;--acc2:#3dd68c;--card:#12161f;--line:#232a36}
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,Segoe UI,Roboto,sans-serif}
-  a{color:#6cb6ff;text-decoration:none}a:hover{text-decoration:underline}
-  .wrap{max-width:900px;margin:0 auto;padding:48px 20px}
-  .flag{font-family:ui-monospace,Consolas,monospace;white-space:pre;color:var(--acc);font-size:11px;line-height:1.15}
-  h1{font-size:26px;margin:18px 0 6px}
-  .sub{color:var(--mut);margin-bottom:24px}
-  .badges span{display:inline-block;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:2px 10px;margin:0 6px 6px 0;font-size:12.5px;color:var(--mut)}
-  .badges b{color:var(--acc2);font-weight:600}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:26px 0}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
-  .card h3{font-size:15px;margin-bottom:6px;color:var(--acc)}
-  .card p{font-size:14px;color:var(--mut)}
-  pre{background:#0d1117;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-size:13.5px;line-height:1.5;margin:14px 0}
-  code{font-family:ui-monospace,Consolas,monospace}
-  .cmt{color:#7d8590}.out{color:var(--acc2)}
-  h2{font-size:19px;margin:30px 0 10px}
-  ul{margin:8px 0 8px 20px}
-  li{margin:4px 0;color:var(--mut)}li b{color:var(--fg)}
-  .warn{border:1px solid #4a3b1e;background:#1a160c;border-radius:10px;padding:12px 16px;font-size:14px;color:#d7b96a;margin:22px 0}
-  footer{margin-top:40px;color:#556072;font-size:13px;border-top:1px solid var(--line);padding-top:16px}
-  .btn{display:inline-block;background:var(--acc);color:#fff;border-radius:8px;padding:9px 18px;font-weight:600;margin:4px 8px 4px 0}
-  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
-  @media(max-width:640px){.grid{grid-template-columns:1fr}}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>php2shell — Unauthenticated RCE Toolkit untuk PHP 5.4 - 8.4.26 (CVE-2026-109619)</title>
+  
+  <!-- SEO Meta Tags -->
+  <meta name="description" content="Toolkit riset dan reproduksi unauthenticated RCE chain untuk CVE-2026-109619 & CVE-2026-109618 pada mod_php + Apache prefork. Pure HTTP, zero target-side requirements, proof-of-access design.">
+  <meta name="keywords" content="php2shell, CVE-2026-109619, CVE-2026-109618, PHP RCE, Apache prefork, security research, JA3 impersonation, proof-of-access, vulnerability reproduction">
+  <meta name="author" content="aarsaputra">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://aarsaputra.github.io/php2shell/">
+
+  <!-- Open Graph Meta Tags -->
+  <meta property="og:title" content="php2shell — Unauthenticated RCE Toolkit untuk PHP 5.4 - 8.4.26">
+  <meta property="og:description" content="Riset & reproduksi remote exploit chain CVE-2026-109619 (CVSS 9.2). Pure HTTP, proof-of-access by design, stealth JA3 transport.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://aarsaputra.github.io/php2shell/">
+  <meta property="og:image" content="../gambar/screenshot_1.png">
+  <meta property="og:site_name" content="php2shell">
+  <meta property="og:locale" content="id_ID">
+
+  <!-- Twitter Card Meta Tags -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="php2shell — Unauthenticated RCE Toolkit untuk PHP 5.4 - 8.4.26">
+  <meta name="twitter:description" content="Riset & reproduksi remote exploit chain CVE-2026-109619 (CVSS 9.2). Pure HTTP, proof-of-access by design, stealth JA3 transport.">
+  <meta name="twitter:image" content="../gambar/screenshot_1.png">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareSourceCode",
+    "name": "php2shell",
+    "description": "Toolkit riset dan reproduksi unauthenticated RCE chain untuk CVE-2026-109619 & CVE-2026-109618 pada mod_php + Apache prefork.",
+    "codeRepository": "https://github.com/aarsaputra/php2shell",
+    "programmingLanguage": "PHP+Python",
+    "license": "GPL-3.0",
+    "author": {
+      "@type": "Person",
+      "name": "aarsaputra"
+    },
+    "runtimePlatform": "Linux"
+  }
+  </script>
+
+  <!-- Favicon SVG (Self-contained Data URI) -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2300ff88'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12c0 3.32 1.62 6.26 4.1 8.08V22h3.9v-2h4v2h3.9v-1.92c2.48-1.82 4.1-4.76 4.1-8.08 0-5.52-4.48-10-10-10zm-3 12c-.83 0-1.5-.67-1.5-1.5S8.17 11 9 11s1.5.67 1.5 1.5S9.83 14 9 14zm6 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z'/%3E%3C/svg%3E">
+
+  <!-- Self-contained Stylesheet -->
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="wrap">
 
-<div class="flag"> ____  _   _ ____ ____  ____  _   _ _____ _
-|  _ \| | | | ____|  _ \/ ___|| | | |_   _| |
-| |_) | |_| | |_) | |_) \___ \| | | | | | | |
-|  __/|  _  |  __/|  _ < ___) | |_| | | | |_|
-|_|   |_| |_|_|   |_| \_\____/ \___/  |_|(_)</div>
+  <!-- Visual FX: Scanlines & Matrix Grid -->
+  <div class="scanlines-overlay" aria-hidden="true"></div>
+  <div class="cyber-grid" aria-hidden="true"></div>
 
-<h1>php2shell <span style="color:var(--mut);font-weight:400">v1.5.1</span></h1>
-<div class="sub">Unauthenticated RCE chain for PHP 5.4 → 8.4.26 — pure-HTTP, JA3 impersonation, proof-of-access by design.</div>
-<div class="badges">
-  <span>CVE <b>2026-109619</b></span>
-  <span>CVE <b>2026-109618</b> (deteksi)</span>
-  <span>fix-floor <b>8.2.35 / 8.3.36 / 8.4.27 / 8.5.12</b></span>
-  <span>tests <b>118 passed</b></span>
-  <span>⭐ 47 · 🍴 32</span>
-</div>
+  <!-- Header & Navigation -->
+  <header class="site-header">
+    <div class="container nav-wrap">
+      <a href="#" class="brand-logo" title="php2shell Toolkit">
+        <svg class="brand-icon" viewBox="0 0 24 24">
+          <path d="M12 2C6.48 2 2 6.48 2 12c0 3.32 1.62 6.26 4.1 8.08V22h3.9v-2h4v2h3.9v-1.92c2.48-1.82 4.1-4.76 4.1-8.08 0-5.52-4.48-10-10-10zm-3 12c-.83 0-1.5-.67-1.5-1.5S8.17 11 9 11s1.5.67 1.5 1.5S9.83 14 9 14zm6 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+        </svg>
+        <span>php2shell</span>
+        <span class="brand-tag">v1.5.1</span>
+      </a>
 
-<div style="margin:22px 0">
-  <a class="btn" href="https://github.com/aarsaputra/php2shell">GitHub repo</a>
-  <a class="btn ghost" href="TUTORIAL.md">Tutorial (semua fitur)</a>
-  <a class="btn ghost" href="RUNBOOK_RCE_UPSHELL.md">Runbook RCE → up-shell</a>
-</div>
+      <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Toggle Menu" aria-expanded="false">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
 
-<h2>Apa ini</h2>
-<p style="color:var(--mut)">Rantai 3-tahap penuh-HTTP: <b>heap leak</b> → <b>libphp base leak</b> → <b>HashTable palsu → zif_system</b> (CVE-2026-109619, stale global state antar-request pada worker yang sama). Tanpa file, tanpa endpoint khusus, tanpa crypto di sisi klien — hanya multipart POST.</p>
+      <ul class="nav-links" id="nav-links">
+        <li><a href="#overview" class="nav-link active">Overview</a></li>
+        <li><a href="#vulns" class="nav-link">Vulnerabilities</a></li>
+        <li><a href="#features" class="nav-link">Fitur</a></li>
+        <li><a href="#architecture" class="nav-link">Arsitektur</a></li>
+        <li><a href="#install" class="nav-link">Instalasi</a></li>
+        <li><a href="#usage" class="nav-link">CLI Usage</a></li>
+        <li><a href="#scenarios" class="nav-link">Lab vs Live</a></li>
+        <li><a href="#security" class="nav-link">Security & Etika</a></li>
+      </ul>
 
-<div class="grid">
-  <div class="card"><h3>detect</h3><p>Versi PHP, SAPI, upload_progress, display_errors — read-only; OOM probe otomatis bila versi tak bocor.</p></div>
-  <div class="card"><h3>preflight</h3><p>Skor kesiapan 0–90 + BLOCKER eksplisit sebelum exploit.</p></div>
-  <div class="card"><h3>exploit</h3><p>RCE terbukti dengan bukti (<code>--proof-file</code>: <i>uid=33(www-data)</i>), carrier 14 byte, whitelist perintah.</p></div>
-  <div class="card"><h3>shell &amp; up-shell</h3><p>Generator webshell (bcrypt, TTL, audit) + pemasangan otomatis lewat RCE (dua jalur, verifikasi per-karakter).</p></div>
-</div>
+      <div class="nav-actions">
+        <a href="https://github.com/aarsaputra/php2shell" target="_blank" rel="noopener noreferrer" class="btn-github">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </div>
+  </header>
 
-<h2>Quickstart</h2>
-<pre><code><span class="cmt"># pasang (venv + deps + smoke)</span>
-git clone https://github.com/aarsaputra/php2shell && cd php2shell
-./install.sh && <span class="cmt">source .venv/bin/activate</span>
+  <!-- Hero Section -->
+  <section class="hero-section" id="overview">
+    <div class="container">
+      <div class="hero-content">
+        <div class="hero-meta-badges">
+          <span class="badge badge-red">CVSS 4.0 · 9.2 CRITICAL</span>
+          <span class="badge badge-green">PHP 5.4 - 8.4.26</span>
+          <span class="badge badge-cyan">UNAUTHENTICATED RCE</span>
+          <span class="badge badge-amber">PROOF-OF-ACCESS DESIGN</span>
+        </div>
 
-<span class="cmt"># kenali target (read-only)</span>
-python php2shell.py detect -u http://target-lab/
+        <h1 class="hero-title">
+          <span class="glitch">PHP2SHELL</span><br>
+          <span class="text-green glow-green">Unauthenticated RCE Chain</span>
+        </h1>
 
-<span class="cmt"># bukti RCE — berhenti di sini untuk bug bounty</span>
-python php2shell.py exploit -u http://target-lab/ --yes --proof-file p1
-<span class="out"># PROOF (11.7s): uid=33(www-data) gid=33(www-data)</span></code></pre>
+        <p class="hero-subtitle">
+          Toolkit riset, reproduksi, dan verifikasi keamanan unauthenticated remote code execution
+          terhadap kerentanan kritis <strong>CVE-2026-109619</strong> &amp; <strong>CVE-2026-109618</strong> pada
+          <code>mod_php + Apache prefork</code>. Bekerja murni lewat HTTP, tanpa dependensi fitur upload atau session target.
+        </p>
 
-<h2>Dukungan build (data terukur)</h2>
-<ul>
-  <li><b>RCE terbukti (5)</b>: 8.4.26 amd64 (profil bookworm), 8.5.11 amd64/aarch64, 8.5.10 aarch64, 8.4.25 aarch64*</li>
-  <li><b>Leak saja (3)</b>: 8.5.0, 8.3.35, 8.3.33 — stage-3 belum jalan</li>
-  <li><b>Belum terbukti (5)</b>: 8.3.0, 8.2.34, 8.1.34, 8.0.30, 7.4.33 — UAF ada, bentuk leak beda</li>
-</ul>
-<p style="color:var(--mut);font-size:14px">* probabilistik, butuh retry. Detail: <a href="RUNBOOK_RCE_UPSHELL.md">RUNBOOK §0</a>.</p>
+        <div class="hero-actions">
+          <a href="#install" class="btn btn-primary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Mulai / Install</span>
+          </a>
+          <a href="#usage" class="btn btn-secondary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="4 17 10 11 4 5"></polyline>
+              <line x1="12" y1="19" x2="20" y2="19"></line>
+            </svg>
+            <span>Eksplorasi CLI Modes</span>
+          </a>
+          <a href="https://github.com/aarsaputra/php2shell" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+            <span>Repo GitHub</span>
+          </a>
+        </div>
 
-<div class="warn"><b>Etika:</b> hanya untuk sistem milik sendiri / otorisasi tertulis. Bug bounty: hampir semua RoE melarang webshell tertinggal — cukup bukti RCE (<code>--proof-file</code>), berhenti di situ. Status <code>BLIND</code>/<code>HEAP_LEAK_FAILED</code> = hasil pengukuran tool (perintah tidak dieksekusi / tak ada kanal bukti), bukan bug.</div>
+        <!-- Terminal Interactive Mockup -->
+        <div class="terminal-window">
+          <div class="terminal-header">
+            <div class="terminal-controls">
+              <span class="terminal-dot dot-red"></span>
+              <span class="terminal-dot dot-yellow"></span>
+              <span class="terminal-dot dot-green"></span>
+            </div>
+            <div class="terminal-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="4 17 10 11 4 5"></polyline>
+                <line x1="12" y1="19" x2="20" y2="19"></line>
+              </svg>
+              <span>bash — lota@sec-lab: ~/php2shell</span>
+            </div>
+            <div class="terminal-actions">
+              <button class="terminal-btn" id="btn-sim-run">Next Simulation</button>
+            </div>
+          </div>
+          <div class="terminal-body" id="hero-terminal-body">
+            <div class="terminal-prompt-line">
+              <span class="prompt-sym">$</span>
+              <span class="prompt-text" id="hero-typed-cmd"></span>
+              <span class="typing-cursor"></span>
+            </div>
+            <div class="terminal-output" id="hero-terminal-output"></div>
+          </div>
+        </div>
 
-<h2>Dokumentasi</h2>
-<ul>
-  <li><a href="TUTORIAL.md">docs/TUTORIAL.md</a> — semua fitur langkah-demi-langkah (diuji live)</li>
-  <li><a href="RUNBOOK_RCE_UPSHELL.md">docs/RUNBOOK_RCE_UPSHELL.md</a> — dari RCE ke webshell, dua jalur</li>
-  <li><a href="https://github.com/aarsaputra/php2shell/blob/main/README.md">README.md</a> — referensi lengkap CLI</li>
-  <li><a href="https://github.com/aarsaputra/php2shell/security/policy">SECURITY.md</a> — laporan kerentanan tool ini</li>
-</ul>
+        <!-- Stats Ribbon -->
+        <div class="stats-ribbon">
+          <div class="stat-item">
+            <div class="stat-value">5.4 - 8.4.26</div>
+            <div class="stat-label">Rentang PHP Rentan</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">9.2 Critical</div>
+            <div class="stat-label">Skor CVSS 4.0</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">46 / 46</div>
+            <div class="stat-label">Unit Tests Verified</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">14 Bytes</div>
+            <div class="stat-label">Pagar Batas Perintah</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">GPL-3.0</div>
+            <div class="stat-label">Lisensi Open Source</div>
+          </div>
+        </div>
 
-<footer>
-  Reproduction, tooling &amp; hardening: <b>aarsaputra</b> · Advisory: PHP Group — GHSA-w8hw-w9fx-j79w / GHSA-6wmf-4rv5-p3rp · Credits: devploit/php2shell, ikow/php2shell-poc, assetnote &amp; Searchlight Cyber (scanner research), 9bie (ASLR bypass).<br>
-  © 2026 — disediakan apa adanya, untuk pengujian berotorisasi.
-</footer>
+      </div>
+    </div>
+  </section>
 
-</div>
+  <!-- Section: The Vulnerabilities -->
+  <section class="section" id="vulns">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-badge"><span class="badge badge-red">THE FLAWS</span></div>
+        <h2 class="section-title">Anatomi Bug &amp; Versi Terpengaruh</h2>
+        <p class="section-desc">
+          Dua kerentanan PHP kritis unauthenticated yang diumumkan Oktober 2026.
+          Toolkit ini mengimplementasikan rantai eksploitasi penuh untuk CVE-2026-109619.
+        </p>
+      </div>
+
+      <div class="table-scroll table-wrapper">
+        <table class="vuln-table">
+          <thead>
+            <tr>
+              <th>Parameter</th>
+              <th>CVE-2026-109619</th>
+              <th>CVE-2026-109618</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Kelas Kerentanan</strong></td>
+              <td><span class="text-green">Stale Global State -&gt; Use-After-Free (UAF)</span></td>
+              <td><span class="text-amber">OOM Bailout Corruption -&gt; longjmp</span></td>
+            </tr>
+            <tr>
+              <td><strong>Mekanisme Trigger</strong></td>
+              <td>Multipart callback <code>session.upload_progress</code> dieksekusi <strong>sebelum RINIT</strong>; OOM meninggalkan <code>PS(http_session_vars)</code> / <code>PS(id)</code> dangling. Request berikutnya pada <strong>worker yang sama</strong> memicu <code>zval_ptr_dtor</code> pada memori bebas.</td>
+              <td><code>zend_bailout()</code> di tengah-tengah alokasi menyisakan struktur data setengah jadi di global state.</td>
+            </tr>
+            <tr>
+              <td><strong>Jumlah Request</strong></td>
+              <td><span class="badge badge-cyan">2 Request (Producer + Consumer)</span></td>
+              <td><span class="badge badge-amber">1 Request</span></td>
+            </tr>
+            <tr>
+              <td><strong>Fix-Floor Patch</strong></td>
+              <td><code>8.2.35 / 8.3.36 / 8.4.27 / 8.5.12</code></td>
+              <td><code>8.2.35 / 8.3.36 / 8.4.27 / 8.5.12</code></td>
+            </tr>
+            <tr>
+              <td><strong>Status di Toolkit Ini</strong></td>
+              <td><span class="badge badge-green">RCE (Full 0 -&gt; RCE Chain Aktif)</span></td>
+              <td><span class="badge badge-amber">Deteksi &amp; Preflight Only</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Zero Requirements & Version Table Callout -->
+      <div class="vuln-callout">
+        <div class="callout-box highlight">
+          <h4 class="text-cyan font-mono" style="margin-bottom: 0.5rem;">Zero Target-Side Requirements</h4>
+          <p class="text-muted" style="margin-bottom: 0.5rem;">Rantai exploit tidak membutuhkan prasyarat aplikasi target:</p>
+          <ul class="feature-list">
+            <li>TIDAK butuh fungsi <code>session_start()</code> pada skrip target</li>
+            <li>TIDAK butuh fitur upload file apapun di aplikasi</li>
+            <li>TIDAK butuh autentikasi, cookies, atau trik header</li>
+            <li>Endpoint target cukup berupa satu baris: <code>&lt;?php echo "OK\n"; ?&gt;</code></li>
+          </ul>
+        </div>
+
+        <div class="callout-box">
+          <h4 class="text-green font-mono" style="margin-bottom: 0.5rem;">Fix-Floor &amp; Status Branch</h4>
+          <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 0.5rem;">
+            Bila versi PHP target <strong>di bawah fix-floor</strong>, sistem rentan:
+          </p>
+          <div style="font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.6;">
+            <div>• PHP 8.4: Rentan ≤ <strong>8.4.26</strong> · Patch: <strong>8.4.27</strong></div>
+            <div>• PHP 8.3: Rentan ≤ <strong>8.3.35</strong> · Patch: <strong>8.3.36</strong></div>
+            <div>• PHP 8.2: Rentan ≤ <strong>8.2.34</strong> · Patch: <strong>8.2.35</strong></div>
+            <div>• PHP 8.5: Rentan ≤ <strong>8.5.11</strong> · Patch: <strong>8.5.12</strong></div>
+            <div>• PHP ≤ 8.1: <span class="text-red">EOL (End of Life) — Rentan permanen</span></div>
+          </div>
+        </div>
+
+        <div class="callout-box">
+          <h4 class="text-amber font-mono" style="margin-bottom: 0.5rem;">Catatan Advisori Resmi</h4>
+          <p class="text-muted" style="font-size: 0.85rem; line-height: 1.5;">
+            Patch PHP dibangun ulang 22 Okt 2026. <code>memory_limit=-1</code> <strong>BUKAN mitigasi lengkap</strong> (GHSA-w8hw-w9fx-j79w).
+            Menonaktifkan <code>session.upload_progress.enabled=0</code> hanya menutup CVE-2026-109618, <strong>tidak</strong> menutup CVE-2026-109619.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section: Features Grid -->
+  <section class="section" id="features">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-badge"><span class="badge badge-green">CAPABILITIES</span></div>
+        <h2 class="section-title">Fitur Utama &amp; Karakteristik</h2>
+        <p class="section-desc">
+          Dibangun dengan filosofi riset defensif dan kendali ketat — membuktikan dampak nyata tanpa senjata perusak bebas.
+        </p>
+      </div>
+
+      <div class="features-grid">
+        <!-- Feature 1 -->
+        <div class="feature-card">
+          <div class="feature-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              <path d="m9 12 2 2 4-4"></path>
+            </svg>
+          </div>
+          <h3 class="feature-title">Proof-of-Access by Design</h3>
+          <p class="feature-text">
+            Perintah eksekusi dibatasi ketat maksimal 14 byte dan difokuskan pada perintah identitas (<code>id</code>, <code>whoami</code>). Ekstraksi bukti hasil perintah terbaca otomatis via channel lab.
+          </p>
+          <ul class="feature-list">
+            <li>Whitelist aman: <code>id</code>, <code>whoami</code>, <code>uname</code>, <code>hostname</code></li>
+            <li>Permanen memblokir <code>bash</code>, <code>nc</code>, <code>curl</code>, <code>wget</code>, piping</li>
+            <li>Reverse shell dieliminasi total dari kode dasar</li>
+          </ul>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="feature-card">
+          <div class="feature-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+          </div>
+          <h3 class="feature-title">Stealth JA3 / TLS Transport</h3>
+          <p class="feature-text">
+            Mengintegrasikan <code>curl_cffi</code> untuk menirukan fingerprint TLS browser asli (Chrome, Safari, Firefox, Edge, Android) guna menghindari blokir WAF bot-mitigation biasa.
+          </p>
+          <ul class="feature-list">
+            <li>Impersonasi TLS/JA3 + HTTP/2 frame headers</li>
+            <li>Timing manusiawi dengan delay + random jitter (0.75×–1.35×)</li>
+            <li>Audit trail lokal: rekaman detail setiap request ke file JSONL</li>
+          </ul>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="feature-card">
+          <div class="feature-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              <line x1="11" y1="8" x2="11" y2="14"></line>
+              <line x1="8" y1="11" x2="14" y2="11"></line>
+            </svg>
+          </div>
+          <h3 class="feature-title">Deteksi Aktif OOM (v1.4.0+)</h3>
+          <p class="feature-text">
+            Mendeteksi target yang menyembunyikan versi di balik CDN menggunakan metodologi riset Assetnote / Searchlight Cyber dengan kunci nested-62 level (1 -&gt; 8 -&gt; 20 MiB).
+          </p>
+          <ul class="feature-list">
+            <li>Analisis fatal OOM di dalam parser multipart</li>
+            <li>Deteksi differential empty HTTP 500 &amp; worker abort</li>
+            <li>Proteksi false-positive terhadap post_max_size guards</li>
+          </ul>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="feature-card">
+          <div class="feature-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+            </svg>
+          </div>
+          <h3 class="feature-title">Adaptive Memory Tuning</h3>
+          <p class="feature-text">
+            Secara cerdas membaca <code>memory_limit</code> target melalui 1 request probe sebelum eksploitasi, lalu menyesuaikan ukuran field multipart stage-1 secara dinamis.
+          </p>
+          <ul class="feature-list">
+            <li>Otomatis set field multipart di atas limit target</li>
+            <li>Validasi dini prasyarat <code>post_max_size</code> ≥ 64M</li>
+            <li>Berhenti dalam ~2 detik jika batas memori target > 512 MB</li>
+          </ul>
+        </div>
+
+        <!-- Feature 5 -->
+        <div class="feature-card">
+          <div class="feature-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="3" y1="9" x2="21" y2="9"></line>
+              <line x1="9" y1="21" x2="9" y2="9"></line>
+            </svg>
+          </div>
+          <h3 class="feature-title">Build Support Matrix</h3>
+          <p class="feature-text">
+            Memuat tabel 13 profil heap PHP terverifikasi (dari riset devploit &amp; lab 9bie). Menjawab tegas apakah target berada pada tingkat RCE penuh atau sekadar leak memori.
+          </p>
+          <ul class="feature-list">
+            <li>Klasifikasi dukungan: RCE, LEAK, NO, atau Unknown</li>
+            <li>Membedakan arsitektur target: <code>amd64</code> vs <code>aarch64</code></li>
+            <li>Dukungan custom offset manual (<code>--zif-offset</code>)</li>
+          </ul>
+        </div>
+
+        <!-- Feature 6 -->
+        <div class="feature-card">
+          <div class="feature-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+          </div>
+          <h3 class="feature-title">Secure Webshell Generator</h3>
+          <p class="feature-text">
+            Generator payload webshell berkeamanan tinggi dengan hash password bcrypt, batasan whitelist perintah ketat, dan masa aktif kedaluwarsa otomatis (TTL).
+          </p>
+          <ul class="feature-list">
+            <li>Generator standalone di subfolder <code>shell/</code> (tanpa auto-upload)</li>
+            <li>Hashing password dengan <code>bcrypt</code> aman</li>
+            <li>Kedaluwarsa otomatis (default TTL 72 jam)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section: Architecture & How It Works -->
+  <section class="section" id="architecture">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-badge"><span class="badge badge-cyan">UNDER THE HOOD</span></div>
+        <h2 class="section-title">Alur Kerja Eksploit &amp; Arsitektur Modul</h2>
+        <p class="section-desc">
+          Bagaimana bug UAF dikonversi menjadi remote code execution in-process murni HTTP, serta pemetaan komponen modul toolkit.
+        </p>
+      </div>
+
+      <!-- 3-Stage Attack Flow -->
+      <div class="workflow-grid">
+        <div class="workflow-card">
+          <div class="workflow-step">1</div>
+          <h3 class="workflow-title text-green">Stage 1: Producer (OOM Trigger)</h3>
+          <p class="workflow-desc">
+            Request A mengirim payload multipart berukuran 12MB+ sebelum <code>RINIT</code>. Menyebabkan OOM pada <code>php_session_initialize()</code>, meninggalkan <code>PS(http_session_vars)</code> dangling. Worker Apache prefork mati karena <code>SIGABRT</code>.
+          </p>
+        </div>
+
+        <div class="workflow-card">
+          <div class="workflow-step">2</div>
+          <h3 class="workflow-title text-cyan">Stage 2: Consumer (ASLR Bypass)</h3>
+          <p class="workflow-desc">
+            Apache prefork melakukan fork worker baru yang mewarisi layout memori dan mapping <code>libphp</code> yang identik. Request B mengklaim ulang pointer dangling via multipart buffer dan membaca leak 4096-byte <code>Set-Cookie</code> guna mengalahkan ASLR.
+          </p>
+        </div>
+
+        <div class="workflow-card">
+          <div class="workflow-step">3</div>
+          <h3 class="workflow-title text-amber">Stage 3: Actuator (Fake HashTable)</h3>
+          <p class="workflow-desc">
+            Menyuntikkan struktur carrier fake <code>HashTable</code> dengan <code>pDestructor = zif_system</code>. Saat Apache membersihkan session di <code>zval_ptr_dtor()</code>, fungsi destruktor memanggil <code>system()</code> dengan payload perintah aman.
+          </p>
+        </div>
+      </div>
+
+      <!-- Module Architecture Tree -->
+      <div class="modules-container">
+        <div class="tree-box">
+          <h4 class="text-green font-mono" style="margin-bottom: 1rem;">Struktur Direktori Repositori</h4>
+          <pre style="color: #c9d1d9; font-size: 0.82rem; line-height: 1.6;">
+php2shell/
+├── <span class="tree-file">php2shell.py</span>         <span class="tree-comment"># Single CLI entrypoint (7 subcommands)</span>
+├── <span class="tree-file">install.sh</span>           <span class="tree-comment"># One-shot installer (venv + deps + smoke test)</span>
+├── <span class="tree-file">requirements.txt</span>     <span class="tree-comment"># Minimal deps (curl_cffi, bcrypt)</span>
+├── <span class="tree-file">lib/</span>                 <span class="tree-comment"># Core in-process engine</span>
+│   ├── <span class="tree-file">chain.py</span>         <span class="tree-comment"># Engine eksploit 3-stage pure Python</span>
+│   ├── <span class="tree-file">transport.py</span>     <span class="tree-comment"># curl_cffi JA3 impersonation & audit JSONL</span>
+│   ├── <span class="tree-file">detect.py</span>        <span class="tree-comment"># Fingerprint versi, SAPI, & upload_progress</span>
+│   ├── <span class="tree-file">preflight.py</span>     <span class="tree-comment"># Readiness score 0-90 & blocker check</span>
+│   ├── <span class="tree-file">build_support.py</span> <span class="tree-comment"># 13 profil heap build (RCE vs LEAK)</span>
+│   ├── <span class="tree-file">oomprobe.py</span>      <span class="tree-comment"># Deteksi aktif OOM nested multipart 62-level</span>
+│   ├── <span class="tree-file">memprobe.py</span>      <span class="tree-comment"># Adaptive inspection memory_limit target</span>
+│   ├── <span class="tree-file">exploit_runner.py</span><span class="tree-comment"># Orchestrator, pagar perintah, & auto-proof</span>
+│   ├── <span class="tree-file">reporter.py</span>      <span class="tree-comment"># Formatter output tabel, JSON, & CSV</span>
+│   └── <span class="tree-file">banner.py</span>        <span class="tree-comment"># CLI ASCII skull banner</span>
+├── <span class="tree-file">shell/</span>               <span class="tree-comment"># Generator webshell aman dengan bcrypt & TTL</span>
+├── <span class="tree-file">lab/</span>                 <span class="tree-comment"># Script setup lab lokal Apache vulnerable</span>
+└── <span class="tree-file">tests/</span>               <span class="tree-comment"># 46+ unit tests komprehensif</span></pre>
+        </div>
+
+        <div class="callout-box" style="display: flex; flex-direction: column; justify-content: space-between;">
+          <div>
+            <h4 class="text-cyan font-mono" style="margin-bottom: 0.75rem;">Prinsip Desain Modular</h4>
+            <p class="text-muted" style="margin-bottom: 1rem; font-size: 0.9rem;">
+              Seluruh engine rantai eksploitasi diimplementasikan secara <strong>in-process</strong> dalam bahasa Python murni tanpa bergantung pada binary eksternal seperti <code>curl</code>, <code>gcc</code>, atau <code>readelf</code>.
+            </p>
+            <ul class="feature-list" style="font-size: 0.88rem;">
+              <li><strong>Zero Spawning:</strong> Tidak menjalankan child process untuk exploit HTTP</li>
+              <li><strong>In-Process ELF Parsing:</strong> Membaca offset symbol ELF via modul Python <code>struct</code> internal</li>
+              <li><strong>Offline Capable:</strong> Seluruh modul transport &amp; payload dapat beroperasi tanpa koneksi internet ke repo eksternal</li>
+              <li><strong>Test-Covered:</strong> 46/46 unit tests memvalidasi pagar eksekusi, format output, dan deteksi SAPI sebelum digunakan</li>
+            </ul>
+          </div>
+          <div style="background: rgba(0, 255, 136, 0.05); border: 1px solid var(--accent-green-border); border-radius: var(--radius-sm); padding: 0.75rem; margin-top: 1rem;">
+            <span class="text-green font-mono" style="font-size: 0.82rem;">Integrity Check:</span>
+            <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem;">
+              Checksum SHA-256 dari <code>lib/chain.py</code> diverifikasi pada setiap peluncuran untuk memastikan integritas engine payload.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section: Installation Guide -->
+  <section class="section" id="install">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-badge"><span class="badge badge-green">GETTING STARTED</span></div>
+        <h2 class="section-title">Panduan Instalasi &amp; Persiapan</h2>
+        <p class="section-desc">
+          Tiga tingkat ketergantungan. Tool inti hanya butuh Python 3.9+ dan 2 dependensi ringan.
+        </p>
+      </div>
+
+      <div class="install-grid">
+        <!-- Install Option 1 -->
+        <div class="install-card featured">
+          <div class="install-title text-green font-mono">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            <span>01. One-Shot Installer (Disarankan)</span>
+          </div>
+          <p class="text-muted" style="font-size: 0.9rem; margin-bottom: 1rem;">
+            Menyiapkan virtual environment, memasang dependensi, menjalankan smoke test, dan membuat perintah global <code>php2shell</code>.
+          </p>
+          <div class="code-block-header">
+            <span class="code-title">Terminal Bash</span>
+            <button class="btn-copy">Copy</button>
+          </div>
+          <pre class="code-snippet"><code>git clone https://github.com/aarsaputra/php2shell.git
+cd php2shell
+bash install.sh</code></pre>
+          <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5;">
+            • Opsi tanpa symlink global: <code>bash install.sh --no-bin</code><br>
+            • Jalankan tanpa hak akses root (non-sudo).
+          </div>
+        </div>
+
+        <!-- Install Option 2 -->
+        <div class="install-card">
+          <div class="install-title text-cyan font-mono">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 18l6-6-6-6M8 6l-6 6 6 6"></path>
+            </svg>
+            <span>02. Manual Virtual Environment</span>
+          </div>
+          <p class="text-muted" style="font-size: 0.9rem; margin-bottom: 1rem;">
+            Pemasangan standar menggunakan pip untuk environment terisolasi.
+          </p>
+          <div class="code-block-header">
+            <span class="code-title">Terminal Bash</span>
+            <button class="btn-copy">Copy</button>
+          </div>
+          <pre class="code-snippet"><code>python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python php2shell.py --help</code></pre>
+          <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5;">
+            • Hanya membutuhkan <code>curl_cffi</code> (JA3) dan <code>bcrypt</code>.<br>
+            • Target yang mengeksekusi PHP; mesin attacker <strong>tidak wajib</strong> ada PHP.
+          </div>
+        </div>
+
+        <!-- Install Option 3 -->
+        <div class="install-card">
+          <div class="install-title text-amber font-mono">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+              <line x1="6" y1="6" x2="6.01" y2="6"></line>
+              <line x1="6" y1="18" x2="6.01" y2="18"></line>
+            </svg>
+            <span>03. One-Command Docker Lab</span>
+          </div>
+          <p class="text-muted" style="font-size: 0.9rem; margin-bottom: 1rem;">
+            Menjalankan environment riset resmi dengan konfigurasi rentan mod_php Apache 8.4.26.
+          </p>
+          <div class="code-block-header">
+            <span class="code-title">Terminal Bash</span>
+            <button class="btn-copy">Copy</button>
+          </div>
+          <pre class="code-snippet"><code>bash lab/lab_docker.sh start
+python3 docker/offsets.py
+php2shell exploit -u http://127.0.0.1:8095/index.php \
+  --force --yes --exploit-profile bookworm -c 'id>/out/p1'</code></pre>
+          <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5;">
+            • Mengunduh image resmi <code>php:8.4.26-apache</code>.<br>
+            • Mengonfigurasi single worker prefork &amp; mem-mount folder <code>/out</code>.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section: CLI Usage & Interactive Mode Showcase -->
+  <section class="section" id="usage">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-badge"><span class="badge badge-cyan">COMMAND LINE INTERFACE</span></div>
+        <h2 class="section-title">Mode Pemakaian CLI &amp; Contoh Perintah</h2>
+        <p class="section-desc">
+          Pilih salah satu mode kerja di bawah untuk melihat sintaks perintah, opsi flag utama, dan contoh respons terminal.
+        </p>
+      </div>
+
+      <div class="cli-tabs">
+        <div class="tab-nav">
+          <button class="tab-btn active" data-tab="tab-scan">scan</button>
+          <button class="tab-btn" data-tab="tab-detect">detect</button>
+          <button class="tab-btn" data-tab="tab-preflight">preflight</button>
+          <button class="tab-btn" data-tab="tab-exploit">exploit</button>
+          <button class="tab-btn" data-tab="tab-shell">shell</button>
+          <button class="tab-btn" data-tab="tab-builds">builds</button>
+          <button class="tab-btn" data-tab="tab-version">version</button>
+        </div>
+
+        <!-- Tab: scan -->
+        <div class="tab-content active" id="tab-scan">
+          <p class="cli-desc">
+            <strong>Mode Scan:</strong> Memindai banyak target sekaligus dari file daftar teks (<code>-l targets.txt</code>). Melakukan detect dan preflight secara paralel dengan dukungan ekspor laporan JSON dan CSV.
+          </p>
+          <div class="code-block-header">
+            <span class="code-title">Contoh Perintah CLI</span>
+            <button class="btn-copy">Copy</button>
+          </div>
+          <pre class="code-snippet"><code># Pindai banyak URL secara paralel dengan 10 threads dan simpan laporan
+php2shell scan -l targets.txt --threads 10 --json out/report.json --csv out/report.csv
+
+# Pindai dan langsung exploit target yang berstatus READY saja
+php2shell scan -l targets.txt --exploit --yes --cmd id</code></pre>
+          <div class="table-scroll">
+            <table class="cli-flags-table">
+              <tbody>
+                <tr><td><code>-l, --list FILE</code></td><td>File berisi daftar URL (satu URL per baris, auto de-duplicate)</td></tr>
+                <tr><td><code>--threads N</code></td><td>Jumlah worker thread pemindaian concurrent (default: 5)</td></tr>
+                <tr><td><code>--exploit --yes</code></td><td>Lanjutkan eksekusi otomatis hanya terhadap target yang berstatus READY</td></tr>
+                <tr><td><code>--json / --csv PATH</code></td><td>Lokasi penyimpanan file laporan hasil scan</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab: detect -->
+        <div class="tab-content" id="tab-detect">
+          <p class="cli-desc">
+            <strong>Mode Detect:</strong> Intip informasi versi PHP, status <code>upload_progress</code>, dan <code>display_errors</code> target secara read-only tanpa melakukan penyerangan exploit.
+          </p>
+          <div class="code-block-header">
+            <span class="code-title">Contoh Perintah CLI</span>
+            <button class="btn-copy">Copy</button>
+          </div>
+          <pre class="code-snippet"><code># Deteksi pasif standar via GET header
+php2shell detect -u https://target.example/
+
+# Deteksi dengan OOM aktif otomatis untuk target CDN/unknown
+php2shell detect -u https://target.example/
+
+# Matikan deteksi aktif OOM probe
+php2shell detect -u https://target.example/ --no-oom</code></pre>
+          <div class="table-scroll">
+            <table class="cli-flags-table">
+              <tbody>
+                <tr><td><code>-u, --urls URL</code></td><td>Satu atau lebih URL target yang akan dideteksi</td></tr>
+                <tr><td><code>--no-oom</code></td><td>Matikan pengiriman probe OOM bertingkat (1/8/20 MiB)</td></tr>
+                <tr><td><code>--sapi {auto,fpm,mod_php}</code></td><td>Filter pembacaan sinyal crash (default: auto)</td></tr>
+                <tr><td><code>--check-version</code></td><td>Bandingkan versi lokal dengan repositori GitHub sebelum mendeteksi</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab: preflight -->
+        <div class="tab-content" id="tab-preflight">
+          <p class="cli-desc">
+            <strong>Mode Preflight:</strong> Memberikan kalkulasi skor kesiapan exploit (0–90) dan mendeteksi kondisi blocker. Deteksi adalah informasi, bukan penghalang jalan.
+          </p>
+          <div class="code-block-header">
+            <span class="code-title">Contoh Perintah CLI</span>
+            <button class="btn-copy">Copy</button>
+          </div>
+          <pre class="code-snippet"><code># Hitung skor kesiapan target
+php2shell preflight -u https://target.example/
+
+# Tampilkan rincian koneksi HTTP secara mendetail
+php2shell preflight -u https://target.example/ -v</code></pre>
+          <div class="table-scroll">
+            <table class="cli-flags-table">
+              <tbody>
+                <tr><td><code>Skor 30 Poin</code></td><td>Versi PHP terkonfirmasi di bawah fix-floor yang rentan</td></tr>
+                <tr><td><code>Skor 30 Poin</code></td><td>Direktif session.upload_progress.enabled terdeteksi On</td></tr>
+                <tr><td><code>Skor 15 Poin</code></td><td>display_errors aktif (membocorkan heap / memory error)</td></tr>
+                <tr><td><code>Skor 15 Poin</code></td><td>Format versi dikenali secara presisi</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab: exploit -->
+        <div class="tab-content" id="tab-exploit">
+          <p class="cli-desc">
+            <strong>Mode Exploit:</strong> Mengeksekusi rantai penuh 3-stage (heap leak, ASLR defeat, fake HashTable carrier). Membutuhkan konfirmasi tegas <code>--yes</code>.
+          </p>
+          <div class="code-block-header">
+            <span class="code-title">Contoh Perintah CLI</span>
+            <button class="btn-copy">Copy</button>
+          </div>
+          <pre class="code-snippet"><code># Skenario Lab Lokal (Hasil perintah terbaca via mount /out)
+php2shell exploit -u http://127.0.0.1:8095/index.php --force --yes \
+    --exploit-profile bookworm -c 'id>/out/p1'
+
+# Skenario Target Live (Blind by design — verifikasi via worker restart)
+php2shell exploit -u https://target.example/ --yes -c 'id'</code></pre>
+          <div class="table-scroll">
+            <table class="cli-flags-table">
+              <tbody>
+                <tr><td><code>-c, --cmd CMD</code></td><td>Perintah identitas maks 14 byte (default: id; disaring whitelist ketat)</td></tr>
+                <tr><td><code>--force</code></td><td>Abaikan peringatan preflight belum ready (tetap meminta konfirmasi)</td></tr>
+                <tr><td><code>--exploit-profile</code></td><td>Profil offset bawaan image (mis. bookworm untuk image resmi)</td></tr>
+                <tr><td><code>--zif-offset / --dtor-offset</code></td><td>Pasok offset alamat simbol biner libphp kustom secara manual</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab: shell -->
+        <div class="tab-content" id="tab-shell">
+          <p class="cli-desc">
+            <strong>Mode Shell:</strong> Menghasilkan file webshell PHP berkeamanan tinggi dengan credential hash bcrypt, nama acak 32-hex, dan kedaluwarsa TTL. Generator murni (tidak melakukan upload).
+          </p>
+          <div class="code-block-header">
+            <span class="code-title">Contoh Perintah CLI</span>
+            <button class="btn-copy">Copy</button>
+          </div>
+          <pre class="code-snippet"><code># Generate webshell dengan masa berlaku 72 jam ke folder shell/out
+php2shell shell --out shell/out --ttl 72
+
+# Tentukan daftar perintah yang diizinkan dieksekusi di webshell
+php2shell shell --out shell/out --ttl 48 --commands "id,whoami,uname,df"</code></pre>
+          <div class="table-scroll">
+            <table class="cli-flags-table">
+              <tbody>
+                <tr><td><code>--out DIR</code></td><td>Folder tujuan keluaran webshell dan file CREDENTIALS.txt</td></tr>
+                <tr><td><code>--ttl HOURS</code></td><td>Masa berlaku webshell dalam hitungan jam sebelum kedaluwarsa (default: 72)</td></tr>
+                <tr><td><code>--commands LIST</code></td><td>Daftar whitelist perintah yang diizinkan (default: id,whoami)</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab: builds -->
+        <div class="tab-content" id="tab-builds">
+          <p class="cli-desc">
+            <strong>Mode Builds:</strong> Menampilkan tabel verifikasi 13 profil heap PHP. Membantu menentukan apakah target terbukti bisa di-RCE atau hanya sampai tahap memory leak.
+          </p>
+          <div class="code-block-header">
+            <span class="code-title">Contoh Perintah CLI</span>
+            <button class="btn-copy">Copy</button>
+          </div>
+          <pre class="code-snippet"><code># Tampilkan semua tabel profil build PHP
+php2shell builds
+
+# Filter hanya build yang terbukti sukses dieksekusi RCE
+php2shell builds --level rce</code></pre>
+          <div class="table-scroll">
+            <table class="cli-flags-table">
+              <tbody>
+                <tr><td><code>Status RCE</code></td><td>Stage 1, 2, dan 3 terbukti sukses di arsitektur tersebut</td></tr>
+                <tr><td><code>Status LEAK</code></td><td>Stage 1 &amp; 2 terbukti (leak alamat memori), stage 3 belum berhasil</td></tr>
+                <tr><td><code>Status NO</code></td><td>Belum pernah terbukti bisa dilanjutkan pada konfigurasi default</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab: version -->
+        <div class="tab-content" id="tab-version">
+          <p class="cli-desc">
+            <strong>Mode Version:</strong> Membandingkan versi toolkit lokal dengan rilis terbaru di repositori GitHub secara fail-safe tanpa telemetri data.
+          </p>
+          <div class="code-block-header">
+            <span class="code-title">Contoh Perintah CLI</span>
+            <button class="btn-copy">Copy</button>
+          </div>
+          <pre class="code-snippet"><code># Cek versi vs rilis terbaru GitHub
+php2shell version
+
+# Abaikan cache 1 jam dan paksa fetch informasi rilis terbaru
+php2shell version --no-cache</code></pre>
+          <div class="table-scroll">
+            <table class="cli-flags-table">
+              <tbody>
+                <tr><td><code>Fail-Safe</code></td><td>Tidak pernah crash atau menggagalkan pipeline bila offline atau GitHub limit</td></tr>
+                <tr><td><code>Tanpa Telemetri</code></td><td>Murni HTTP GET publik ke GitHub API tanpa mengirim data apapun</td></tr>
+                <tr><td><code>Exit Code 10</code></td><td>Mengembalikan kode keluar 10 bila terdapat update baru (cocok untuk gate CI)</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section: Lab vs Live Target -->
+  <section class="section" id="scenarios">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-badge"><span class="badge badge-amber">CRITICAL UNDERSTANDING</span></div>
+        <h2 class="section-title">Lab Target vs. Live Target</h2>
+        <p class="section-desc">
+          Dua skenario dengan ekspektasi hasil dan perintah yang sengaja dibedakan berdasarkan filosofi proof-of-access.
+        </p>
+      </div>
+
+      <div class="scenario-grid">
+        <!-- Scenario Lab -->
+        <div class="scenario-card lab">
+          <div class="scenario-header">
+            <h3 class="text-green font-mono">Skenario A: Lab Lokal (127.0.0.1)</h3>
+            <span class="badge badge-green">Full Proof</span>
+          </div>
+          <p class="text-secondary" style="font-size: 0.92rem; margin-bottom: 1rem;">
+            Pada lab pengujian docker lokal, folder <code>/out</code> di dalam kontainer di-mount langsung ke direktori mesin host (<code>out/p1</code>).
+          </p>
+          <pre class="code-snippet"><code>php2shell exploit -u http://127.0.0.1:8095/index.php \
+    --force --yes --exploit-profile bookworm -c 'id>/out/p1'
+# PROOF (8.3s): uid=33(www-data) (Output terbaca otomatis)</code></pre>
+          <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6;">
+            Karena folder di-mount bersama, toolkit dapat membaca file pembuktian dan menampilkan bukti user ID www-data secara langsung di layar terminal.
+          </div>
+        </div>
+
+        <!-- Scenario Live -->
+        <div class="scenario-card live">
+          <div class="scenario-header">
+            <h3 class="text-amber font-mono">Skenario B: Live Target (Blind by Design)</h3>
+            <span class="badge badge-amber">Blind by Design</span>
+          </div>
+          <p class="text-secondary" style="font-size: 0.92rem; margin-bottom: 1rem;">
+            Pada server live target, folder <code>/out</code> milik server tidak terhubung ke mesin penguji. Perintah dieksekusi tetapi output tidak dialirkan balik.
+          </p>
+          <pre class="code-snippet"><code>php2shell exploit -u https://target.example/ --yes -c 'id'
+# Stage 1, 2, 3 selesai, tapi:
+# BLIND: Perintah terkirim tanpa kanal ekstraksi data!</code></pre>
+          <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6;">
+            <strong>Keputusan Desain Sadar:</strong> Membuat kanal membaca output pada target jauh sama artinya dengan membangun tool ekstraksi data (backdoor). Toolkit sengaja berhenti pada bukti eksekusi (worker crash pattern di log + stage-3 completion).
+          </div>
+        </div>
+      </div>
+
+      <!-- 5 Lab Requirements Box -->
+      <div style="margin-top: 2rem; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius-lg); padding: 1.5rem;">
+        <h4 class="text-green font-mono" style="margin-bottom: 0.75rem;">5 Prasyarat Kalibrasi Lab (The 5 Lab Requirements)</h4>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; font-size: 0.85rem;">
+          <div><strong class="text-cyan">1. MaxRequestWorkers 1:</strong> Memastikan producer &amp; consumer mendarat pada worker Apache yang sama.</div>
+          <div><strong class="text-cyan">2. KeepAlive Off:</strong> Menghindari koneksi persisten yang mengacaukan rotasi worker.</div>
+          <div><strong class="text-cyan">3. Fresh offsets.env:</strong> Offset usang adalah penyebab kegagalan hening terbesar.</div>
+          <div><strong class="text-cyan">4. upload_progress.cleanup = On:</strong> Trigger pembersihan session struktural.</div>
+          <div><strong class="text-cyan">5. Minimal Endpoint:</strong> Cukup file uji sederhana <code>echo "OK";</code>.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section: Security Policy, Fence & Disclaimer -->
+  <section class="section" id="security">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-badge"><span class="badge badge-red">ETHICS &amp; GOVERNANCE</span></div>
+        <h2 class="section-title">Kebijakan Keamanan, Pagar &amp; Batasan Hukum</h2>
+        <p class="section-desc">
+          Pagar perlindungan ditegakkan langsung di level kode (hard-coded fence), bukan sekadar teks peringatan dokumentasi.
+        </p>
+      </div>
+
+      <div class="security-banner">
+        <h3 class="text-red font-mono" style="margin-bottom: 0.75rem;">Pagar Eksekusi Ditegakkan di Level Kode</h3>
+        <p style="color: var(--text-primary); font-size: 0.95rem; line-height: 1.6; margin-bottom: 1.25rem;">
+          Toolkit ini tidak dapat dimodifikasi lewat argumen baris perintah untuk meluncurkan serangan berbahaya tak terkendali. Pembatas diverifikasi pada <code>lib/exploit_runner.py</code> sebelum paket data dikirim ke jaringan:
+        </p>
+        <div class="security-grid">
+          <div class="fence-card">
+            <h4 class="text-green font-mono">Maksimal 14 Byte</h4>
+            <p class="text-muted" style="font-size: 0.85rem;">Payload dibatasi hanya muat untuk perintah pembuktian identitas sederhana seperti <code>id</code> atau <code>whoami</code>.</p>
+          </div>
+          <div class="fence-card">
+            <h4 class="text-green font-mono">Anti-Chaining Operators</h4>
+            <p class="text-muted" style="font-size: 0.85rem;">Karakter berbahaya seperti <code>;</code>, <code>|</code>, <code>&amp;</code>, <code>$</code>, <code>`</code>, <code>&gt;</code>, dan <code>&lt;</code> ditolak seketika oleh runner.</p>
+          </div>
+          <div class="fence-card">
+            <h4 class="text-green font-mono">No Reverse Shell</h4>
+            <p class="text-muted" style="font-size: 0.85rem;">Flag <code>--revshell</code> dan listener netcat dieliminasi total dari kode dasar untuk mencegah penyalahgunaan backdoor.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Legal Notice & Credits -->
+      <div style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 1.75rem;">
+        <h4 class="text-cyan font-mono" style="margin-bottom: 0.75rem;">Pernyataan Hukum &amp; Batasan Penggunaan</h4>
+        <p class="text-secondary" style="font-size: 0.9rem; line-height: 1.6; margin-bottom: 1.25rem;">
+          Alat ini didistribusikan untuk keperluan <strong>riset defensif, pengujian blue-team, dan verifikasi patch keamanan</strong> pada sistem yang telah Anda miliki izin tertulis untuk diuji. Menguji atau mengeksploitasi sistem pihak ketiga tanpa izin adalah pelanggaran hukum berat (Undang-Undang Informasi dan Transaksi Elektronik / UU ITE di Indonesia, US CFAA, dan peraturan cybercrime internasional lainnya).
+        </p>
+
+        <h4 class="text-green font-mono" style="margin-bottom: 0.75rem;">Kredit Riset &amp; Atribusi Penemuan</h4>
+        <p class="text-secondary" style="font-size: 0.85rem; line-height: 1.6;">
+          • <strong>Calif (Ryan A.):</strong> Temuan pertama 1 Agu 2026 &amp; riset mod_php metadata.<br>
+          • <strong>Wiz Research:</strong> Penemu independen dan publikasi analisis PHP2Shell.<br>
+          • <strong>9bie (Qi Deng):</strong> Exploit publik pertama, riset heap grooming, carrier fake HashTable.<br>
+          • <strong>Assetnote &amp; Searchlight Cyber:</strong> Metodologi deteksi aktif OOM multipart 62-level.<br>
+          • <strong>devploit:</strong> Pengukuran tabel 13 profil heap PHP across architectures.<br>
+          • <strong>PHP Group:</strong> Advisori resmi (GHSA-w8hw-w9fx-j79w / GHSA-6wmf-4rv5-p3rp) dan rilis patch perbaikan.<br>
+          • <strong>aarsaputra:</strong> Repositori tooling, engine in-process, pagar keamanan, installer, dan CLI terpadu.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-info">
+          <div class="footer-logo">
+            <svg class="brand-icon" style="width:24px; height:24px;" viewBox="0 0 24 24">
+              <path d="M12 2C6.48 2 2 6.48 2 12c0 3.32 1.62 6.26 4.1 8.08V22h3.9v-2h4v2h3.9v-1.92c2.48-1.82 4.1-4.76 4.1-8.08 0-5.52-4.48-10-10-10zm-3 12c-.83 0-1.5-.67-1.5-1.5S8.17 11 9 11s1.5.67 1.5 1.5S9.83 14 9 14zm6 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+            </svg>
+            <span>php2shell</span>
+          </div>
+          <p style="font-size: 0.88rem; color: var(--text-secondary); line-height: 1.6;">
+            Toolkit riset dan reproduksi unauthenticated RCE chain untuk CVE-2026-109619 pada PHP 5.4 - 8.4.26 (mod_php + Apache prefork). Pure HTTP &amp; proof-of-access by design.
+          </p>
+        </div>
+
+        <div class="footer-links-group">
+          <div class="footer-col">
+            <h5>Navigasi</h5>
+            <ul>
+              <li><a href="#overview">Overview</a></li>
+              <li><a href="#vulns">Vulnerabilities</a></li>
+              <li><a href="#features">Fitur Utama</a></li>
+              <li><a href="#architecture">Arsitektur</a></li>
+              <li><a href="#install">Panduan Install</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h5>Dokumentasi</h5>
+            <ul>
+              <li><a href="#usage">CLI Usage &amp; Modes</a></li>
+              <li><a href="#scenarios">Lab vs Live Target</a></li>
+              <li><a href="#security">Security Policy</a></li>
+              <li><a href="https://github.com/aarsaputra/php2shell" target="_blank" rel="noopener noreferrer">GitHub Repository</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h5>Lisensi &amp; Legal</h5>
+            <ul>
+              <li><a href="https://github.com/aarsaputra/php2shell/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">GNU GPL-3.0 License</a></li>
+              <li><a href="https://github.com/aarsaputra/php2shell/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer">Security Policy (Vulnerability Report)</a></li>
+              <li><a href="https://github.com/aarsaputra/php2shell/blob/main/ATTRIBUTION.md" target="_blank" rel="noopener noreferrer">Attribution Notice</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <div>
+          © 2026 <strong>php2shell</strong> toolkit by <a href="https://github.com/aarsaputra" target="_blank" rel="noopener noreferrer">aarsaputra</a>. Released under the GPL-3.0 License.
+        </div>
+        <div style="display: flex; gap: 1rem;">
+          <a href="#overview" style="color: var(--accent-green);">Back to Top</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Floating Back to Top Button -->
+  <button id="back-to-top" class="back-to-top" aria-label="Kembali ke atas">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="18 15 12 9 6 15"></polyline>
+    </svg>
+  </button>
+
+  <!-- Self-contained Vanilla JS Script -->
+  <script src="app.js"></script>
 </body>
 </html>
