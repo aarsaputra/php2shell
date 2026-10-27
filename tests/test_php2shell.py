@@ -172,6 +172,40 @@ class TestGeneratorShell(unittest.TestCase):
         self.assertRegex(src, r"\$2[aby]\$", "hash harus bcrypt ($2y$/$2b$)")
 
 
+class TestKredensialFsTanpaChmod(unittest.TestCase):
+    """Regresi: filesystem tanpa dukungan permission POSIX (NTFS/fuseblk, vfat).
+
+    Di sana os.chmod() sukses tapi mode tetap 0666/0777 -> kredensial webshell
+    bocor ke semua user lokal. shell/safe_shell.py wajib menolak keras (fail
+    closed), bukan mencetak "(mode 600)" padahal 0777.
+    """
+
+    def test_verifikasi_600_menolak_mode_terbuka(self):
+        sys.path.insert(0, os.path.join(TOOLKIT, "shell"))
+        import safe_shell  # noqa: PLC0415
+
+        tmp = tempfile.mkdtemp(prefix="php2shell-fsmode-")
+        f = os.path.join(tmp, "CREDENTIALS.txt")
+        with open(f, "w", encoding="utf-8") as fh:
+            fh.write("password: rahasia\n")
+        os.chmod(f, 0o644)  # simulasikan FS yang mengabaikan chmod 600
+        with self.assertRaises(PermissionError) as cm:
+            safe_shell._verifikasi_600(__import__("pathlib").Path(f))
+        self.assertIn("tidak menegakkan chmod 600", str(cm.exception))
+
+    def test_verifikasi_600_lolos_di_posix(self):
+        sys.path.insert(0, os.path.join(TOOLKIT, "shell"))
+        import safe_shell  # noqa: PLC0415
+        import pathlib  # noqa: PLC0415
+
+        tmp = tempfile.mkdtemp(prefix="php2shell-fsmode-")
+        f = os.path.join(tmp, "CREDENTIALS.txt")
+        with open(f, "w", encoding="utf-8") as fh:
+            fh.write("password: rahasia\n")
+        safe_shell._chmod_600_ketat(pathlib.Path(f))
+        self.assertEqual(os.stat(f).st_mode & 0o077, 0)
+
+
 class TestAuditTrail(unittest.TestCase):
     """--audit harus benar-benar menulis JSONL valid per request."""
 

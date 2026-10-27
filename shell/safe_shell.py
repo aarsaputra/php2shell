@@ -136,6 +136,29 @@ def build_shell(*, author: str, purpose: str, ttl_h: int, commands: list[str],
     )
 
 
+def _verifikasi_600(path: Path) -> None:
+    """Pastikan mode 600 BENAR-BENAR berlaku; gagal keras bila tidak.
+
+    Filesystem yang tidak menegakkan permission POSIX (NTFS/exFAT via fuseblk,
+    vfat, sebagian FUSE) mengabaikan chmod tanpa error: file tetap 0666/0777.
+    Di situ kredensial webshell terbaca semua user lokal. Karena itu setelah
+    chmod kita baca ulang st_mode dan menolak melanjutkan bila masih terbuka.
+    """
+    mode = stat.S_IMODE(path.stat().st_mode)
+    if mode & 0o077:
+        raise PermissionError(
+            f"{path}: mode {oct(mode)} — filesystem tidak menegakkan chmod 600 "
+            f"(NTFS/exFAT/FUSE?). Kredensial TIDAK boleh ditulis ke sini; "
+            f"pakai --out di filesystem POSIX (mis. ~/out atau /tmp)."
+        )
+
+
+def _chmod_600_ketat(path: Path) -> None:
+    """chmod 600 untuk file sensitif + verifikasi hasilnya."""
+    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    _verifikasi_600(path)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Generate webshell berpassword (add-on, bukan bagian exploit.py)")
@@ -192,7 +215,7 @@ def main() -> int:
     name = secrets.token_hex(16) + ".php"
     php = out / name
     php.write_text(src)
-    os.chmod(php, stat.S_IRUSR | stat.S_IWUSR)
+    _chmod_600_ketat(php)
 
     cred = out / "CREDENTIALS.txt"
     cred.write_text(textwrap.dedent(f"""\
@@ -216,6 +239,7 @@ def main() -> int:
         JANGAN commit file ini. out/ sudah ada di .gitignore.
         """))
     os.chmod(cred, stat.S_IRUSR | stat.S_IWUSR)
+    _verifikasi_600(cred)
 
     print(f"[+] shell    : {php}  (mode 600)")
     print(f"[+] password : {cred}  (mode 600)")
