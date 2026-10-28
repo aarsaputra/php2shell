@@ -47,35 +47,36 @@ def _resolve(host: str) -> list[str]:
         return []
 
 
-def ensure_local_target(url: str) -> None:
-    """Tolak keras target yang bukan loopback/private — modul ini lab-only."""
-    u = urllib.parse.urlsplit(url)
-    host = u.hostname or ""
-    if host in ("localhost",) or host.endswith(".localhost"):
-        return
-    addrs = [host] if _is_ip(host) else _resolve(host)
-    if not addrs:
-        raise SystemExit(
-            f"[x115560] resolusi gagal untuk {host!r} — periksa URL (modul lab-only)")
-    for a in addrs:
-        try:
-            ip = ipaddress.ip_address(a)
-        except ValueError:
-            continue
-        if ip.is_loopback or ip.is_private:
-            return
-    raise SystemExit(
-        "[x115560] DITOLAK: modul ini lab-only (hanya target loopback/private).\n"
-        "Live target public: gunakan detect (caveat) + audit kode aplikasi, "
-        "BUKAN modul serangan ini.")
-
-
 def _is_ip(host: str) -> bool:
     try:
         ipaddress.ip_address(host)
         return True
     except ValueError:
         return False
+
+
+def target_scope(url: str) -> str:
+    """Klasifikasi scope target: 'loopback' | 'private' | 'public'.
+
+    INFORMASI saja — TIDAK memblokir. Batas penggunaan (lab-only vs live)
+    adalah keputusan operator/RoE program, bukan keputusan tool. Tool lain
+    (detect/exploit 109619) juga tidak mengharamkan target publik di kode.
+    """
+    u = urllib.parse.urlsplit(url)
+    host = u.hostname or ""
+    if host == "localhost" or host.endswith(".localhost"):
+        return "loopback"
+    addrs = [host] if _is_ip(host) else _resolve(host)
+    for a in addrs:
+        try:
+            ip = ipaddress.ip_address(a)
+        except ValueError:
+            continue
+        if ip.is_loopback:
+            return "loopback"
+        if ip.is_private:
+            return "private"
+    return "public"
 
 
 # ------------------------------------------------------------- payload ----
@@ -196,7 +197,8 @@ def _get(url: str, sid: str, timeout: float = 8.0) -> tuple[int, bytes]:
 # ------------------------------------------------------------- orkestra ----
 def run_race(cfg: RaceConfig, log=print) -> dict:
     """Jalankan race producer/consumer; kembalikan bukti bila RCE tercapai."""
-    ensure_local_target(cfg.url)
+    scope = target_scope(cfg.url)
+    log(f"[x115560] scope={scope} — pastikan otorisasi (RoE) sebelum menembak")
     u = urllib.parse.urlsplit(cfg.url)
     base = f"{u.scheme}://{u.netloc}"
     proof_path = "/" + cfg.out_path.lstrip("/")
@@ -238,10 +240,10 @@ def check_prereq(url: str, log=print) -> dict:
     Sinyal keberhasilan race di sisi server: PHP Warning
     'session_start(): Failed to decode session object' (butuh display_errors).
     """
-    ensure_local_target(url)
+    scope = target_scope(url)
+    out: dict = {"url": url, "scope": scope}
     u = urllib.parse.urlsplit(url)
     base = f"{u.scheme}://{u.netloc}"
-    out: dict = {"url": base}
     try:
         st, body = _get(base + "/info.php", "<none>")
         out["info_status"] = st
@@ -249,5 +251,5 @@ def check_prereq(url: str, log=print) -> dict:
     except Exception as exc:  # noqa: BLE001
         out["info_status"] = 0
         out["info"] = f"tidak terjangkau: {exc}"
-    log(f"[x115560-check] {out['info_status']} {out['info']}")
+    log(f"[x115560-check] scope={scope} {out['info_status']} {out['info'][:120]}")
     return out

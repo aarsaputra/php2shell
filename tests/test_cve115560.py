@@ -34,21 +34,25 @@ class TestPayload115560(unittest.TestCase):
         self.assertTrue(m2 and int(m2.group(1)) == len("p/O.txt"))
 
 
-class TestGateLabOnly(unittest.TestCase):
+class TestScopeInfo(unittest.TestCase):
+    """target_scope = informasi, TIDAK memblokir (keputusan operator/RoE)."""
+
     def test_loopback_ok(self):
-        m.ensure_local_target("http://127.0.0.1:9404/index.php")  # tak raise
-        m.ensure_local_target("http://localhost:9404/")
+        self.assertEqual(m.target_scope("http://127.0.0.1:9404/"), "loopback")
+        self.assertEqual(m.target_scope("http://localhost:9404/"), "loopback")
 
     def test_private_ok(self):
-        m.ensure_local_target("http://192.168.1.10/")
-        m.ensure_local_target("http://10.0.0.5:8080/")
-        m.ensure_local_target("http://172.17.0.7:9404/")
+        self.assertEqual(m.target_scope("http://192.168.1.10/"), "private")
+        self.assertEqual(m.target_scope("http://10.0.0.5:8080/"), "private")
 
-    def test_public_refused(self):
-        for url in ("https://example.com/", "https://simkerja.ntbprov.go.id/",
-                    "http://1.2.3.4/"):
-            with self.assertRaises(SystemExit):
-                m.ensure_local_target(url)
+    def test_public_classified_not_blocked(self):
+        # public = label saja; TIDAK ada exception/yang mencegah pakai
+        self.assertEqual(m.target_scope("http://1.2.3.4/"), "public")
+
+    def test_no_bypass_flag_needed(self):
+        # run_race/check_prereq tidak punya argumen gate — scope cuma log
+        import inspect
+        self.assertNotIn("ensure_local_target", inspect.getsource(m))
 
 
 class TestRaceConfig(unittest.TestCase):

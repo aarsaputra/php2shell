@@ -1,8 +1,9 @@
-# RUNBOOK — modul x115560 (CVE-2026-115560, LAB ONLY)
+# RUNBOOK — modul x115560 (CVE-2026-115560)
 
 > Modul: `lib/cve115560.py` · Lab image: `p2s115560:lab` (php:8.4.27-apache,
-> app vuln pola googlesky — dikredit). **Batas keras**: target harus
-> loopback/private — modul menolak public IP/domain dengan SystemExit.
+> app vuln pola googlesky — dikredit). Tool TIDAK memblokir target apa pun:
+> scope (loopback/private/public) dicetak sebagai informasi; batas penggunaan
+> = keputusan operator / RoE program (konsisten dengan detect/exploit 109619).
 
 ## Prasyarat bug (ketiganya, dari php.net advisory 23 Okt)
 1. server ini `session.serialize_handler` = `php_binary`|`php_serialize`
