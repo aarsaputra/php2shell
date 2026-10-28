@@ -84,7 +84,13 @@ reports what it can see and the chain proceeds anyway.
   `session.serialize_handler` set to `php_binary`/`php_serialize` and switched
   to `php` at runtime via `ini_set()` before `session_start()`, plus
   `session.upload_progress.enabled=On`. Mitigate with
-  `session.upload_progress.enabled=0`. Closed by the same fix-floor.
+  `session.upload_progress.enabled=0`. **NOT closed by the fix-floor below —
+  see the callout right after this list.**
+
+> **CVE-2026-115560 (2026-10-23, belum dipatch):** fix-floor di atas **tidak
+> menutup** bug session serialize_handler mismatch (object injection via
+> `ini_set` app-side). `patched` + `upload_progress=On` ≠ aman — detect
+> mencetak caveat ini otomatis. Detail: `docs/CVE-2026-115560.md`.
 - **`memory_limit=-1` is NOT a complete mitigation** (GHSA-w8hw-w9fx-j79w).
   If a base allocation fails, `longjmp()` can still happen while request memory
   is reachable. Only upgrading is complete.

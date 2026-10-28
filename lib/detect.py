@@ -196,6 +196,24 @@ def _probe_upload_progress(t: Transport, url: str) -> tuple[str, list[str]]:
     return "unknown", signals
 
 
+def _apply_caveat_115560(d: "Detection") -> None:
+    """Caveat CVE-2026-115560 (serialize_handler mismatch, belum di-patch).
+
+    Fix-floor PHP2Shell TIDAK menutup ini — target "patched" +
+    upload_progress=on tetap berpotensi rentan bila APLIKASI melakukan
+    ini_set('session.serialize_handler','php') sebelum session_start().
+    Tak terdeteksi dari luar (butuh review kode app), jadi cukup caveat
+    eksplisit di reason — bukan klaim vulnerable. Fungsi murni agar mudah
+    di-unit-test tanpa network.
+    """
+    if d.verdict == "patched" and d.upload_progress == "on":
+        d.reason += (
+            " · caveat CVE-2026-115560: fix-floor ini tidak menutup "
+            "session serialize_handler mismatch (object injection; "
+            "butuh app-side ini_set — audit kode aplikasi untuk pokok ini)"
+        )
+
+
 def detect(
     url: str,
     transport: Transport | None = None,
@@ -255,6 +273,12 @@ def detect(
                 "patched_but_bypassable: versi >= fix-floor tetapi "
                 f"upload_progress={d.upload_progress}, display_errors={d.display_errors}"
             )
+        # CVE-2026-115560: fix-floor PHP2Shell TIDAK menutup handler-mismatch
+        # object injection — target "patched" + upload_progress=on tetap
+        # berpotensi rentan jika aplikasi melakukan ini_set serialize_handler.
+        # Deteksi dari luar tak bisa memastikan ini_set (perlu review kode),
+        # jadi cukup caveat eksplisit di reason — bukan klaim vulnerable.
+        _apply_caveat_115560(d)
         if d.verdict == "eol" and d.upload_progress == "on":
             d.reason += " · upload_progress=ON (kombinasi terburuk)"
 
