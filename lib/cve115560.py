@@ -11,10 +11,10 @@ Prasyarat (ketiganya, dari googlesky + php.net advisory 2026-10-23):
   2. aplikasi: ini_set('session.serialize_handler','php') sebelum session_start()
   3. session.upload_progress.enabled = On (default PHP)
 
-BATAS PENGGUNAAN (sengaja keras):
-  - Modul ini menolak target yang TIDAK loopback/private (127/8, 10/8,
-    172.16/12, 192.168/16, ::1). Tidak ada override — pengujian hanya
-    di lab milik sendiri. Live target = tinggal check manual + audit kode.
+BATAS PENGGUNAAN:
+  - Tool TIDAK memblokir target apa pun — scope (loopback/private/public)
+    dicetak sebagai informasi di awal run; otorisasi = tanggung jawab
+    operator / RoE program (konsisten dengan modul detect/exploit lain).
   - RCE butuh gadget class di aplikasi target; tanpa gadget = injection
     tanpa dampak eksekusi.
 

@@ -88,5 +88,6 @@ docker rmi p2s115560:lab
    session object. Session has been destroyed"** (destruct tetap fire walau
    decode failure — jalur googlesky: `PHP_VAR_UNSERIALIZE_DESTROY` di kedua
    jalur exit).
-5. Live target publik: **modul menolak**; check pasif + audit kode aplikasi
-   (`ini_set.*serialize_handler`) adalah jalur yang sah untuk produksi.
+5. Live target publik: tool TIDAK memblokir — scope tercatat di log; prasyarat
+   app (ini_set + gadget) jarang terpenuhi; check pasif + audit kode aplikasi
+   adalah jalur verifikasi yang paling umum untuk produksi.
