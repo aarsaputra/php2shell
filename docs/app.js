@@ -19,7 +19,10 @@ function initHeroTyping() {
   const promptEl = document.getElementById('hero-typed-cmd');
   const outputEl = document.getElementById('hero-terminal-output');
   const simulateBtn = document.getElementById('btn-sim-run');
+  const terminalWindow = document.querySelector('.terminal-window') || outputEl;
   if (!promptEl || !outputEl) return;
+
+  const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const ASCII_BANNER = [
     " ____  _   _ ____ ____  ____  _   _ _____ _     _",
@@ -168,15 +171,48 @@ function initHeroTyping() {
 
   let scenarioIdx = 0;
   let charIdx = 0;
-  let isTyping = true;
+  let isTyping = false;
   let typeTimeout = null;
+  let isIntersecting = false;
+  let hasStarted = false;
+
+  function renderInstantScenario(sc) {
+    promptEl.textContent = sc.cmd;
+    outputEl.innerHTML = '';
+    if (sc.banner) {
+      outputEl.appendChild(createBannerElement(sc.banner));
+    }
+    sc.lines.forEach(lineData => {
+      const div = document.createElement('div');
+      div.className = lineData.cls || '';
+      div.textContent = lineData.text;
+      outputEl.appendChild(div);
+    });
+  }
+
+  // Support prefers-reduced-motion: render static scenario immediately without main-thread animation loop
+  if (prefersReduced) {
+    renderInstantScenario(scenarios[0]);
+    if (simulateBtn) {
+      simulateBtn.addEventListener('click', () => {
+        scenarioIdx = (scenarioIdx + 1) % scenarios.length;
+        renderInstantScenario(scenarios[scenarioIdx]);
+      });
+    }
+    return;
+  }
 
   function typeNextCharacter() {
+    if (!isIntersecting && charIdx === 0) {
+      // Pause loop while terminal is scrolled out of viewport
+      typeTimeout = setTimeout(typeNextCharacter, 300);
+      return;
+    }
     const current = scenarios[scenarioIdx];
     if (charIdx < current.cmd.length) {
       promptEl.textContent += current.cmd.charAt(charIdx);
       charIdx++;
-      typeTimeout = setTimeout(typeNextCharacter, 28 + Math.random() * 20);
+      typeTimeout = setTimeout(typeNextCharacter, 62 + Math.random() * 20);
     } else {
       isTyping = false;
       if (current.banner) {
@@ -215,7 +251,7 @@ function initHeroTyping() {
   function erasePrompt(callback) {
     if (promptEl.textContent.length > 0) {
       promptEl.textContent = promptEl.textContent.slice(0, -1);
-      setTimeout(() => erasePrompt(callback), 12);
+      setTimeout(() => erasePrompt(callback), 24);
     } else {
       outputEl.innerHTML = '';
       if (callback) callback();
@@ -249,8 +285,41 @@ function initHeroTyping() {
     return pre;
   }
 
-  // Initial trigger
-  typeNextCharacter();
+  // Defer animation start via IntersectionObserver + requestIdleCallback after page load
+  const setupObserver = () => {
+    if ('IntersectionObserver' in window) {
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          isIntersecting = entry.isIntersecting;
+          if (isIntersecting && !hasStarted) {
+            hasStarted = true;
+            isTyping = true;
+            typeNextCharacter();
+          }
+        });
+      }, { threshold: 0.1 });
+      observer.observe(terminalWindow);
+    } else {
+      isIntersecting = true;
+      hasStarted = true;
+      isTyping = true;
+      typeNextCharacter();
+    }
+  };
+
+  const scheduleStart = () => {
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(setupObserver, { timeout: 1500 });
+    } else {
+      setTimeout(setupObserver, 600);
+    }
+  };
+
+  if (document.readyState === 'complete') {
+    scheduleStart();
+  } else {
+    window.addEventListener('load', scheduleStart, { once: true });
+  }
 
   if (simulateBtn) {
     simulateBtn.addEventListener('click', () => {
@@ -260,6 +329,7 @@ function initHeroTyping() {
       scenarioIdx = (scenarioIdx + 1) % scenarios.length;
       charIdx = 0;
       isTyping = true;
+      hasStarted = true;
       typeNextCharacter();
     });
   }
@@ -413,13 +483,20 @@ function initBackToTop() {
   if (!btn) return;
 
   const SCROLL_THRESHOLD = 600;
+  let ticking = false;
 
   const handleScroll = () => {
-    const scrollY = window.pageYOffset || document.documentElement.scrollTop || 0;
-    if (scrollY > SCROLL_THRESHOLD) {
-      btn.classList.add('visible');
-    } else {
-      btn.classList.remove('visible');
+    if (!ticking) {
+      window.requestAnimationFrame(() => {
+        const scrollY = window.pageYOffset || document.documentElement.scrollTop || 0;
+        if (scrollY > SCROLL_THRESHOLD) {
+          btn.classList.add('visible');
+        } else {
+          btn.classList.remove('visible');
+        }
+        ticking = false;
+      });
+      ticking = true;
     }
   };
 
