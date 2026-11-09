@@ -27,7 +27,7 @@
 ## ❖ What is this?
 
 `php2shell` is a **reproduction and research toolkit** for two critical PHP
-vulnerabilities — **CVE-2026-109619** and **CVE-2026-109618** (CVSS 4.0 **9.2
+vulnerabilities, **CVE-2026-109619** and **CVE-2026-109618** (CVSS 4.0 **9.2
 Critical**, unauthenticated, fixed in `8.2.35 / 8.3.36 / 8.4.27 / 8.5.12`).
 
 It turns the bug into a **fully remote, HTTP-only exploit chain** against
@@ -53,10 +53,10 @@ blocked, and evidence is retrieved automatically — it demonstrates impact
 | **Trigger** | `session.upload_progress` multipart callbacks run **before RINIT**; OOM leaves `PS(http_session_vars)` / `PS(id)` dangling → the next request on the **same worker** calls `zval_ptr_dtor` on freed memory | `zend_bailout()` mid-allocation leaves half-built structures in global state |
 | **Requests** | 2 (producer + consumer) | 1 |
 | **Fix** | 8.2.35 / 8.3.36 / 8.4.27 / 8.5.12 | same |
-| **Status in this toolkit** | ✅ **implemented — full 0→RCE chain** | ⛔ intentionally not implemented (detect/preflight only) |
+| **Status in this toolkit** | ✅ **implemented: full 0→RCE chain** | ⛔ intentionally not implemented (detect/preflight only) |
 
 **Version semantics** — if your PHP is **below** the fix-floor, it is **vulnerable
-and exploitable**; every release **from the fix-floor up** patches all of these
+and exploitable**. Every release **from the fix-floor up** patches all of these
 issues. PHP ≤ 8.1 is EOL: no backports, vulnerable forever.
 
 | Branch | last vulnerable | fixed |
@@ -69,12 +69,12 @@ issues. PHP ≤ 8.1 is EOL: no backports, vulnerable forever.
 
 Highest impact: **mod_php + prefork** (cross-request worker reuse).
 php-fpm is a strong mitigation (the worker dies per request).
-CDN-hidden versions? **Detection is information, not a gate** — preflight
-reports what it can see and the chain proceeds anyway.
+CDN-hidden versions? **Detection is information, not a gate**: preflight
+reports what it can see, and the chain proceeds anyway.
 
 ### Post-release advisory (verified 2026-10-24, primary sources)
 
-- **The patches were rebuilt on 22 Oct 2026** — `8.5.12` and `8.4.27` carry
+- **The patches were rebuilt on 22 Oct 2026**: `8.5.12` and `8.4.27` carry
   ChangeLog entries dated 22 Oct (`Avoid state corruption via bailout`), but the
   version numbers did not change. The same `8.4.27` can mean the 21 Oct build
   (not final) or the 22 Oct build (final). **Check the package build date, not
@@ -84,8 +84,8 @@ reports what it can see and the chain proceeds anyway.
   `session.serialize_handler` set to `php_binary`/`php_serialize` and switched
   to `php` at runtime via `ini_set()` before `session_start()`, plus
   `session.upload_progress.enabled=On`. Mitigate with
-  `session.upload_progress.enabled=0`. **NOT closed by the fix-floor below —
-  see the callout right after this list.**
+  `session.upload_progress.enabled=0`. **NOT closed by the fix-floor below.
+  See the callout right after this list.**
 
 > **CVE-2026-115560 (2026-10-23, not yet patched):** the fix-floor above does
 > **not** close the session serialize_handler mismatch bug (object injection via
@@ -130,8 +130,8 @@ Every dependency and why it exists: **[REQUIREMENTS.md](REQUIREMENTS.md)**.
 
 ## ❖ One-command lab
 
-The repo ships the **author's exact vulnerable lab configuration** — reproducing
-the research environment is one command, not an afternoon:
+The repo ships the **author's exact vulnerable lab configuration**, so reproducing
+the research environment takes one command, not an afternoon:
 
 ```bash
 bash lab/lab_docker.sh start
@@ -177,7 +177,7 @@ php2shell exploit \
   fences & warnings: php2shell.py --help  |  details: README.md
 ```
 
-*(exactly the banner the CLI prints when run — source: `lib/banner.py`)*
+*(exactly the banner the CLI prints when run; source: `lib/banner.py`)*
 
 ---
 
@@ -205,14 +205,14 @@ php2shell exploit -u https://target.example/ --yes -c 'id'
 # → BLIND — the command was sent, but there is no proof channel
 ```
 
-On a live target **`id>/out/p1` is USELESS** — the `/out` folder on the target
+On a live target **`id>/out/p1` is USELESS**: the `/out` folder on the target
 server is not mounted onto your machine, so there is nothing to read. The result is
 `BLIND`: the chain *is executed* (worker dies + restarts = a clear trace in the
 server log), but the command output never reaches you.
 
-**That is a design decision, not a shortcoming:** going to the trouble of building
-an "output read channel" on a live target = building a data-exfiltration tool =
-crossing the line from proof-of-access → backdoor. This toolkit deliberately stops
+**That is a design decision, not a shortcoming.** Building an "output read
+channel" on a live target would mean building a data-exfiltration tool, which
+crosses the line from proof-of-access to backdoor. This toolkit deliberately stops
 at proof of *execution* (worker crash pattern + stage 3 completion), not proof of
 *command output*.
 
@@ -235,8 +235,8 @@ php2shell exploit -u https://target.example/ --yes -c 'id'
 
 > ⚠️ **Be aware of the risk on a live target:** every attempt makes one Apache
 > worker **die (SIGABRT)** and then get forked again. On a production server that
-> means service disruption + an extremely obvious log trail + a possible WAF
-> block. One attempt is enough to prove it — the 3×3 retry loop is for the lab only.
+> means service disruption, an extremely obvious log trail, and a possible WAF
+> block. One attempt is enough to prove it. The 3×3 retry loop is for the lab only.
 
 ---
 
@@ -251,8 +251,8 @@ php2shell.py scan -l targets.txt --threads 10        # parallel
 php2shell.py scan -l targets.txt --json out/r.json --csv out/r.csv
 ```
 
-File format: one URL per line, `#` comments, duplicates dropped (case & trailing
-slash are considered the same), lines without `://` get `https://` automatically.
+File format: one URL per line, `#` starts a comment, duplicates are dropped (case and a
+trailing slash count as the same URL), lines without `://` get `https://` prepended.
 Result: a terminal table + JSON + CSV (verdict, version, score, ready, proof).
 
 ### `detect -u URL` — peek at the version (read-only, does not attack)
@@ -266,7 +266,7 @@ verdict (vulnerable/patched/EOL), `session.upload_progress` status,
 `display_errors` status. Its ammunition is an ordinary GET.
 
 **Active OOM detection (new, v1.4.0)** — switches on automatically when the verdict
-is still `unknown`/`eol` after the passive probe (the PHP version is hidden by a CDN
+is still `unknown`/`eol` after the passive probe (the PHP version is hidden by a CDN,
 or the target is EOL). The methodology follows
 [assetnote/php2shell-scanner](https://github.com/assetnote/php2shell-scanner):
 a control request + three multipart probes with nested-62-level array keys
@@ -287,7 +287,7 @@ php2shell.py detect -u https://target.example/ --no-oom  # turn the OOM probe of
 Note: if the target's `memory_limit` is > 20 MiB, OOM is never reached →
 the verdict stays `inconclusive` with an explicit reason (not "not
 vulnerable"). Targets whose version is readable and >= fix-floor are never
-OOM-probed (cheaper and leaves the smallest trace).
+OOM-probed (it is cheaper and leaves the smallest trace).
 
 ### `preflight -u URL` — readiness score + blockers
 
@@ -324,7 +324,7 @@ Important options:
 #### Why `--huge-mb` is automatic now
 
 Stage 1 sends a single multipart field that **must be larger** than the target's
-`memory_limit` — that is what triggers the OOM. It used to be nailed to 12 MB,
+`memory_limit`; that is what triggers the OOM. It used to be pinned to 12 MB,
 and the consequence differed from target to target:
 
 | target `memory_limit` | 12 MB hardcoded | now |
@@ -341,7 +341,7 @@ slightly above the limit.
 
 What this tool does **not** do: keep raising the size until it works.
 If the number is unreadable (`display_errors=Off`), it uses the 12 MB default
-and says so — it does not sweep 256 MB at someone's target just to
+and says so. It does not sweep 256 MB at someone's target just to
 guess. If `memory_limit` is above 512 MB, it stops and reports,
 because this chain really will not run there.
 
@@ -349,8 +349,8 @@ because this chain really will not run there.
 
 The chain fails at stage 1 not because of the number of Apache workers, but because
 **the request never reaches PHP intact**. If `post_max_size` is smaller
-than the stage-1 body, PHP discards that body before the script runs — and
-from the outside the failure is identical to "the target is not vulnerable".
+than the stage-1 body, PHP discards that body before the script runs, and
+from the outside the failure looks identical to "the target is not vulnerable".
 
 | Setting | Requirement | Why |
 |---|---|---|
@@ -424,9 +424,9 @@ Behaviour:
 
 ### `builds` — which builds can actually be RCE'd
 
-This answers the question that is most often answered wrongly: **"can this target
+This answers the question people get wrong most often: **"can this target
 be RCE'd or can it only be leaked?"** Before version 1.3.0, `preflight` returned
-`READY` for any build that passed the version check — even though PHP 8.3.x is proven
+`READY` for any build that passed the version check, even though PHP 8.3.x is proven
 to only reach the leak stage.
 
 ```bash
@@ -464,19 +464,19 @@ Meaning of the `support` column:
 | `?` | build not in the table | tried with the default offsets; consider it unproven |
 
 This table also shows up automatically in `preflight` as the `support :` line and in
-the 3rd column of the `scan`/`detect` table — so the decision to fire is made
+the 3rd column of the `scan`/`detect` table, so the decision to fire is made
 **before** the chain runs, not after waiting 200 seconds for a failure.
 
-Two things need to be stressed:
+Two things matter here:
 
 - **Architecture decides.** `8.4.26` is RCE on `amd64`, but only `LEAK` on
   `aarch64`. If the target architecture is unreadable, the tool uses the RCE
-  entry as an estimate — with the caveat that architecture decides the outcome.
+  entry as an estimate, with the caveat that architecture decides the outcome.
 - **`NO` does not mean "impossible".** That is the word used by the author of the
   original table, and we follow it as-is. Offsets can be supplied manually via
   `--zif-offset` / `--dtor-offset`.
   If you have a build that is not in the table but its RCE works, that is a new
-  finding — not an error in the table.
+  finding, not an error in the table.
 
 Table sources: `devploit/php2shell` (13 heap profiles, 5 verified RCE),
 `9bie/php2shell-bypass-aslr-exp` (worker pinning on the stock image), and our own lab
@@ -501,7 +501,7 @@ Table sources: `devploit/php2shell` (13 heap profiles, 5 verified RCE),
 | Flag | Function |
 |---|---|
 | `--quiet` | shrink the chain output (the opposite of `-v`) |
-| `--cve {CVE-2026-109619}` | pick the CVE to fire (109619 only; other values are rejected — 109618 is not implemented) |
+| `--cve {CVE-2026-109619}` | pick the CVE to fire (109619 only; other values are rejected, and 109618 is not implemented) |
 | `--fetch URL` | URL fetched through the RCE after execution (a channel to read the result) |
 | `--proof-file NAME` | does `-c 'id>/out/NAME'` and then reads the result back (name `[A-Za-z0-9_-]{1,24}`; the proof channel) |
 | `--output-file FILE` | write the raw chain output to a file |
@@ -547,7 +547,7 @@ here, instead of through a "forked from" mechanism.
 
 ### Two comparison repos (read, not vendored)
 
-We did **not** take code from these two repos — they were read for comparison, and one
+We did **not** take code from these two repos. They were read for comparison, and one
 of them contributed **data** that we adopted (the build support table).
 They are named here so it is clear which part is code and which part is measurement.
 
@@ -557,7 +557,7 @@ They are named here so it is clear which part is code and which part is measurem
 | `https://github.com/murrez/php2shell` (murrez, MIT) | Nothing was adopted into the code. | Code. The 4,411-line `poc.py` is not vendored; we do not repeat their claim of `CVE-2026-115560` as the "headline". |
 
 What is interesting about `devploit`, and what we noted in `ATTRIBUTION.md`: they
-solved 9bie's licensing problem by **not** copying code at all —
+solved 9bie's licensing problem by **not** copying code at all:
 `bootstrap_upstream.py` only clones a specific commit at runtime.
 We could not take that route (the chain engine has to run offline), but
 the pattern is right.
@@ -578,24 +578,24 @@ code.
 
 | Name | Role |
 |---|---|
-| **Wiz Research** | Discoverer and public analyst of PHP2Shell (CVE-2026-109618 / CVE-2026-109619) — [blog](https://www.wiz.io/blog/php2shell-php-rce). Everything in this repo starts from that publication. |
+| **Wiz Research** | Discoverer and public analyst of PHP2Shell (CVE-2026-109618 / CVE-2026-109619); [blog](https://www.wiz.io/blog/php2shell-php-rce). Everything in this repo starts from that publication. |
 | **Calif** | Parallel research, analysis of upload metadata amplification ([calif.io](https://calif.io/research/wp2root)). |
 | **9bie (Qi Deng)** | First public exploit + heap grooming research: stage-1/2 leak, stage-3 fake HashTable carrier. The chain in `lib/chain.py` is a port of that logic. |
-| **Karasawa2025** | The `display_errors=Off` direction — the OOM-in-cookie primitive and an alternative leak strategy. |
+| **Karasawa2025** | The `display_errors=Off` direction: the OOM-in-cookie primitive and an alternative leak strategy. |
 | **v.dir.mir** | Added `--revshell` to the reference `exploit.py` (commit `5fc5669`). That feature was **not** ported here. |
 | **Zer061** | The fork our byte-level `exploit.py` reference was taken from (sha256 `ea925683…`). |
 | **ikow** | OOM verifier for CVE-2026-109618 (`poc/verify_oom_trigger.py`). |
 | **devploit** | The 13 heap profile table → `lib/build_support.py`, and the `bootstrap_upstream.py` licensing pattern. |
 | **Assetnote / Searchlight Cyber** (Shubham Shah, Adam Kues, Patrik Grobshäuser) | The active detection methodology in [`assetnote/php2shell-scanner`](https://github.com/assetnote/php2shell-scanner) + the [Searchlight write-up](https://www.slcyber.io/research/high-fidelity-detection-mechanism-for-php2shell-cve-2026-109618-and-cve-2026-109619): staged 1/8/20 MiB OOM probes with nested-62 keys, the `fatal-in-parser`/`empty-500-differential`/`worker-abort` signals, and catching the `memory_limit` false-positive → adopted as `lib/oomprobe.py` (automatic in `detect` mode; `--no-oom` to disable). |
-| **calif.io** | The [original php2shell write-up](https://calif.io/php2shell/), the first to detail the exploitation conditions of mod_php & php-fpm — referenced by the assetnote scanner as a triage basis. |
+| **calif.io** | The [original php2shell write-up](https://calif.io/php2shell/), the first to detail the exploitation conditions of mod_php & php-fpm, and referenced by the assetnote scanner as a triage basis. |
 | **PHP Group** | Advisories + the fixes in 8.4.27 / 8.5.12. |
 
-If a credit is missing or wrong, open an issue — that is devploit's sentence,
-and we use it too because that is exactly how it should be.
+If a credit is missing or wrong, open an issue. That is devploit's sentence,
+and we use it too, because that is exactly how it should be.
 
 Deliberately **not** cited: `WoYinDao` (mentioned by devploit, but we found no
 public trace we could verify) and `CVE-2026-115560` (404 at MITRE,
-0 results at NVD) — that number is used by `murrez` as a headline, and we do not
+0 results at NVD). That number is used by `murrez` as a headline, and we do not
 repeat it.
 
 ### Why it cannot be forked
@@ -622,7 +622,7 @@ shell** added by commit `5fc5669` by **v.dir.mir**:
 - a `perl` socket exec payload
 - an `nc` listener that hands over an interactive shell
 
-This is a documented feature, **not a hidden trojan** — but it is also the legitimate
+This is a documented feature, **not a hidden trojan**, but it is also the legitimate
 reason GitHub took down the originating repo. We did not adopt it:
 
 | Upstream | php2shell |
@@ -639,16 +639,16 @@ scanned. Full report: `AUDIT_FORENSIK_Zer061_2026-10-24.md` (lab SSD).
 
 | Check | Result |
 |---|---|
-| C2 / hardcoded external hosts | **none** — only `hub.docker.com` in the README, `127.0.0.1`, `localhost` |
+| C2 / hardcoded external hosts | **none**: only `hub.docker.com` in the README, `127.0.0.1`, `localhost` |
 | Credential theft (`~/.ssh`, `.aws`, `/etc/shadow`, `.netrc`) | **none** |
 | Persistence (`crontab`, `systemd`, `rc.local`, autostart) | **none** |
-| Obfuscation (`b64decode`, hex blob, `chr()` chain, keylogger) | **none** — `\x..` = the protocol byte array |
-| Unknown binaries | **none** — only the official `php-8.4.26.tar.gz` + 1 PNG |
-| `scp` to an outside host | **none** — only `172.16.1.112` (RFC1918, the author's lab VM) |
-| **`--revshell` + payloads + `nc` listener** | **PRESENT in the reference source** — **fully blocked here** |
+| Obfuscation (`b64decode`, hex blob, `chr()` chain, keylogger) | **none**: `\x..` = the protocol byte array |
+| Unknown binaries | **none**: only the official `php-8.4.26.tar.gz` + 1 PNG |
+| `scp` to an outside host | **none**: only `172.16.1.112` (RFC1918, the author's lab VM) |
+| **`--revshell` + payloads + `nc` listener** | **PRESENT in the reference source**, **fully blocked here** |
 
 The word "pristine" in older documents means **not modified by us**, not
-**harmless**. If you fork this repo, **diff first before trusting** — the same
+**harmless**. If you fork this repo, **diff first before trusting**; that is the same
 rule we applied to upstream.
 
 ---
@@ -690,17 +690,17 @@ expose every tuning knob the chain has.
 
 ## ❖ Stealth / anti-bot detection
 
-The requests it sends are deliberately made to **look like a real browser**, not a script:
+The requests are deliberately built to **look like a real browser**, not a script:
 
 | Layer | What it does |
 |---|---|
-| **TLS/JA3 fingerprint** | `curl_cffi` replays a real browser handshake (JA3 + ALPN + extensions exactly) — a standard Python script produces a strange JA3 that a WAF spots instantly; this one does not |
-| **Complete browser profile** | `--ja3 chrome` (default), `safari`, `firefox`, `edge`, `android` — TLS + User-Agent + Accept-Language consistent as one identity |
-| **Normal-looking headers** | `Accept`, `Accept-Encoding`, `Sec-Fetch-*`, `Upgrade-Insecure-Requests` — exactly a browser's order and contents, not `requests`/`urllib` defaults |
+| **TLS/JA3 fingerprint** | `curl_cffi` replays a real browser handshake (JA3 + ALPN + extensions exactly). A standard Python script produces a strange JA3 that a WAF spots instantly; this one does not |
+| **Complete browser profile** | `--ja3 chrome` (default), `safari`, `firefox`, `edge`, `android`: TLS + User-Agent + Accept-Language consistent as one identity |
+| **Normal-looking headers** | `Accept`, `Accept-Encoding`, `Sec-Fetch-*`, `Upgrade-Insecure-Requests`: exactly a browser's order and contents, not `requests`/`urllib` defaults |
 | **Identity rotation** | profiles rotate between requests → traffic from 1 IP is not always the same profile (like a real user on different devices) |
-| **Human timing** | delay between requests + random jitter (0.75×–1.35×) — a perfectly regular robot cadence is easy to score |
+| **Human timing** | delay between requests + random jitter (0.75×–1.35×); a perfectly regular robot cadence is easy to score |
 | **Polite retries** | exponential backoff (2→4→8 seconds), not brute force |
-| **Local audit trail** | every request is recorded in a JSONL file (`--audit`) — you can audit for yourself exactly what was sent |
+| **Local audit trail** | every request is recorded in a JSONL file (`--audit`), so you can audit for yourself exactly what was sent |
 
 ```bash
 # example: use the Safari identity + go through a proxy + 3 second delay between requests
@@ -715,15 +715,15 @@ php2shell exploit -u <url> --ja3 safari --proxy http://127.0.0.1:8080 --delay 3 
 
 Your run fails on a build/config that isn't calibrated. These are the knobs:
 
-1. **`MaxRequestWorkers 1`** — producer & consumer must land on the *same* worker
+1. **`MaxRequestWorkers 1`**: producer and consumer must land on the *same* worker
 2. **`KeepAlive Off`**
-3. **fresh `out/offsets.env`** — stale offsets are the #1 silent killer
+3. **fresh `out/offsets.env`**: stale offsets are the #1 silent killer
 4. **`session.upload_progress.cleanup = On`**
-5. **minimal endpoint** — `<?php echo "OK\n"; ?>`
+5. **minimal endpoint**: `<?php echo "OK\n"; ?>`
 
 Targets with a different build (distro PHP, other version): measure their
 `libphp.so` and pass `--zif-offset / --dtor-offset`. Retrying with wrong
-offsets never helps — `HEAP_LEAK_FAILED` means *not calibrated*, not *"safe"*.
+offsets never helps. `HEAP_LEAK_FAILED` means *not calibrated*, not *"safe"*.
 
 ---
 
@@ -735,14 +735,14 @@ offsets never helps — `HEAP_LEAK_FAILED` means *not calibrated*, not *"safe"*.
 No — and this is an honest limitation. It requires mod_php + Apache **prefork**,
 the vulnerable version range, `session.upload_progress=On`, and heap conditions
 matching a calibrated build. php-fpm largely mitigates this bug. That's what the
-`detect` + `preflight` modes are for — run them first.
+`detect` + `preflight` modes are for; run them first.
 </details>
 
 <details>
 <summary><b>Why is there no reverse shell mode?</b></summary>
 
 Deliberate. This is a **proof-of-access** toolkit: it proves code execution with
-identity commands (`id`, `whoami`) and refuses to become an attack appliance —
+identity commands (`id`, `whoami`) and refuses to become an attack appliance:
 `sh`, `bash`, `nc`, `curl`, `wget`, `chmod`, `rm` are blocked at runner level
 and cannot be enabled by any flag. For benign persistence testing there is the
 password-protected `shell` generator (bcrypt, TTL, whitelist, never auto-uploads).
@@ -833,7 +833,7 @@ Exploiting third-party systems without authorization is a crime
 (UU ITE Indonesia, US CFAA, EU equivalents).
 
 The design (identity-only commands, no shell primitives, no exfiltration)
-is intentional — this toolkit proves impact; it does not weaponize beyond proof.
+is intentional: this toolkit proves impact; it does not weaponize beyond proof.
 
 **See [SECURITY.md](SECURITY.md) · License: [GPL-3.0-only](LICENSE)**
 
