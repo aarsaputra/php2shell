@@ -610,7 +610,7 @@ A fork = a single git lineage. Here:
 
 None of them can be the single "parent". What we wrote
 ourselves: the 7-mode CLI, the in-process engine `lib/chain.py`, auto-proof reading of `out/p1`,
-the command fence, the preflight score, stealth mode, 81 unit tests, the installer, the Docker lab.
+the command fence, the preflight score, stealth mode, 133 unit tests, the installer, the Docker lab.
 
 ### Why `--revshell` is not here
 
@@ -786,7 +786,7 @@ commands, no shells, no exfil primitives) reflects that scope.
 | Command fence | 16 negative test cases, rejected **before** any network I/O |
 | `--revshell` | blocked at runner level (exit 2), not just parser |
 | Multi-target mode | dedupe, auto-https, JSON/CSV verified live |
-| 81 unit tests | `python -m unittest discover -s tests -t .` → OK |
+| 133 unit tests | `python -m unittest discover -s tests -t .` → OK |
 
 ---
 
@@ -815,7 +815,7 @@ php2shell/
 ├── lab/lab_docker.sh     author-config vulnerable lab, one command
 ├── docker/               php.ini / apache.conf / www / offsets.py
 ├── docs/                 SYARAT_TARGET.md — what makes the chain work
-├── tests/                81 unit tests
+├── tests/                133 unit tests
 └── gambar/               screenshot
 ```
 
