@@ -212,7 +212,7 @@ server log), but the command output never reaches you.
 
 **That is a design decision, not a shortcoming.** Building an "output read
 channel" on a live target would mean building a data-exfiltration tool, which
-crosses the line from proof-of-access to backdoor. This toolkit deliberately stops
+crosses the line from proof-of-access to backdoor. The design deliberately stops
 at proof of *execution* (worker crash pattern + stage 3 completion), not proof of
 *command output*.
 
@@ -339,7 +339,7 @@ request first, reads the number out of the PHP fatal message
 (`Allowed memory size of N bytes exhausted`), and then sets the field
 slightly above the limit.
 
-What this tool does **not** do: keep raising the size until it works.
+What it does **not** do: keep raising the size until it works.
 If the number is unreadable (`display_errors=Off`), it uses the 12 MB default
 and says so. It does not sweep 256 MB at someone's target just to
 guess. If `memory_limit` is above 512 MB, it stops and reports,
@@ -572,7 +572,7 @@ the pattern is right.
 
 ### Research credits — who found it, who wrote it down
 
-This tool **does not claim discovery of the CVEs**. The discoverer is **Wiz
+Discovery of the CVEs is **not** claimed here. The discoverer is **Wiz
 Research**, and that has to be said before the names of the people who wrote the
 code.
 
@@ -678,8 +678,8 @@ rule we applied to upstream.
 └──────────────────────────────────────────────┘
 ```
 
-**What leaks first:** a 4096-byte `Set-Cookie` header carried by an
-out-of-bounds `php_url_encode()` read reveals the **Zend MM chunk base**;
+The first leak is a 4096-byte `Set-Cookie` header carried by an
+out-of-bounds `php_url_encode()` read, and it reveals the **Zend MM chunk base**;
 a second stale read exposes `zval_ptr_dtor`'s address → **libphp base** →
 ASLR defeated, all offsets resolved, command executed.
 
@@ -707,7 +707,13 @@ The requests are deliberately built to **look like a real browser**, not a scrip
 php2shell exploit -u <url> --ja3 safari --proxy http://127.0.0.1:8080 --delay 3 --yes
 ```
 
-**Its measurable limit:** this gets past classic *script-vs-browser* detection (JA3, headers, timing patterns). If the target uses heavy bot-management (Cloudflare Bot Management, Akamai) that inspects HTTP/2 frame order, cookie history, or even JS rendering — that is a different arms race and this tool does not claim to win there. For a PHP prefork lab & the majority of ordinary servers: safe enough. 😉
+JA3/TLS handshake, header order and contents, and inter-request timing are
+reproduced as a real browser produces them. HTTP/2 frame order, cookie history,
+and JS rendering are not reproduced. Bot-management stacks that score those
+three layers (Cloudflare Bot Management, Akamai) belong to a target class the
+tool does not test, and requests against them are expected to be flagged.
+Against a PHP prefork lab, or an ordinary server that runs no bot-management of
+that class, the profile passes the script-vs-browser checks it is built for.
 
 ---
 
@@ -825,7 +831,7 @@ php2shell/
 
 <div align="center">
 
-This tool publishes **defense-relevant reproduction** of two **already-patched**
+The project publishes **defense-relevant reproduction** of two **already-patched**
 PHP vulnerabilities for research, blue-team validation, and patch-verification.
 Use it **only** on systems you own or have written authorization to test.
 
