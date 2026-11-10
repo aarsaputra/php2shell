@@ -298,19 +298,36 @@ class TestKlaimBanner(unittest.TestCase):
                       "exploit_runner.py tidak memakai mesin rantai internal")
 
     def test_exploit_py_tidak_dimodifikasi(self):
-        """exploit.py upstream tidak dibawa di repo ini (krdit di README).
-        Sebagai gantinya: pastikan mesin rantai internal TETAP byte-identik
-        dengan referensi — simpan sha256 chain.py dan bandingkan."""
+        """exploit.py upstream tidak dibawa di repo ini (kredit di README).
+
+        Sebagai gantinya: kunci isi mesin rantai internal. Hash di bawah
+        diperbarui SETELAH perubahan yang disengaja di-review, sehingga setiap
+        perubahan byte berikutnya pada lib/chain.py menggagalkan tes dan
+        memaksa pembaca diff-nya dulu.
+
+        Hash ini mencakup tiga perubahan sah (audit hardening):
+          1. verifikasi TLS AKTIF secara default (CERT_REQUIRED +
+             check_hostname) — sebelumnya CERT_NONE, artinya tool melewati
+             verifikasi sertifikat tanpa diminta. Pelewatan sekarang harus
+             eksplisit lewat verify_tls=False.
+          2. query string ikut di request line (`self.request_target`), juga
+             `host_header` membungkus IPv6 literal dan `get()` default ke
+             path+query target. Sebelumnya `?route=debug` dibuang sehingga
+             stage 1/2/3 menembak handler yang berbeda dari maksud operator.
+          3. deadline ABSOLUT di `Target` (`deadline`, `remaining()`,
+             `op_timeout()` dengan lantai `MIN_OP_TIMEOUT` dan
+             `DeadlineExceeded`) — semua operasi socket/retry/join memakai
+             sisa anggaran, sehingga timeout tidak lagi akumulatif per
+             operasi dan total eksekusi terbatas pada deadline operator.
+        """
         import hashlib
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         p = os.path.join(here, "lib", "chain.py")
         with open(p, "rb") as fh:
             now = hashlib.sha256(fh.read()).hexdigest()
-        # hash ini TERVERIFIKASI ulang 26 Okt 2026 (edit komentar data, tanpa
-        # perubahan logika; diff = 1 baris komentar)
         self.assertEqual(now,
-            "1b446b9ce341e0928f1705e3323a6c8163a2d9e1b4ba7d6b337b18e6318b20e3",
-            "lib/chain.py berubah — perbarui hash ini setelah review")
+            "0882177925c493eceffb7af1092a4a102f2522c5350875d463025eaaa62c85da",
+            "lib/chain.py berubah — review diff, lalu perbarui hash ini")
 
 
 class TestBannerKejujuranCVE(unittest.TestCase):
@@ -842,7 +859,8 @@ class TestOomProbeBaru(unittest.TestCase):
         from lib.oomprobe import oom_detect, OOMResult
         r = OOMResult()
         d = r.as_dict()
-        for k in ("verdict", "signal", "evidence", "probes_sent", "probe_results"):
+        for k in ("verdict", "signal", "evidence", "probes_sent",
+                  "probe_results", "confirmed"):
             self.assertIn(k, d)
 
     def test_nested_keys_62_dan_probe_bertingkat(self):
@@ -870,7 +888,7 @@ class TestOomProbeBaru(unittest.TestCase):
 
     def test_oom_in_parser_true_positive(self):
         sys.path.insert(0, TOOLKIT)
-        from lib.oomprobe import _classify_response
+        from lib.oomprobe import _classify_response, OOMResult
 
         class FakeResp:
             status = 200
@@ -879,17 +897,28 @@ class TestOomProbeBaru(unittest.TestCase):
         verdict, signal = _classify_response(FakeResp(), control_body_len=10)
         self.assertEqual(verdict, "vulnerable")
         self.assertEqual(signal, "oom_in_parser")
+        # satu-satunya jalur yang boleh ber-confirmed True
+        self.assertTrue(OOMResult(verdict=verdict).confirmed)
 
     def test_empty_500_differential(self):
+        """Differential empty-500 = DUGAAN, bukan bukti kerentanan.
+
+        500-kosong saat control ber-body konsisten dengan worker FPM mati di
+        tengah request, TAPI pola yang sama muncul saat upstream mati, gateway
+        timeout, atau worker crash karena sebab non-PHP. Karena itu verdict
+        "suspected" dan `confirmed` False; naik ke "vulnerable" hanya kalau
+        salah satu probe memuat fatal OOM berlokasi "Unknown".
+        """
         sys.path.insert(0, TOOLKIT)
-        from lib.oomprobe import _classify_response
+        from lib.oomprobe import _classify_response, OOMResult
 
         class FakeResp:
             status = 500
             body = ""
         verdict, signal = _classify_response(FakeResp(), control_body_len=120)
-        self.assertEqual(verdict, "vulnerable")
+        self.assertEqual(verdict, "suspected")
         self.assertEqual(signal, "empty_500")
+        self.assertFalse(OOMResult(verdict=verdict).confirmed)
 
     def test_detect_auto_oom_default_and_no_oom_flag(self):
         """detect() default: OOM jalan bila verdict unknown/eol; --no-oom
