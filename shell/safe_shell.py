@@ -27,6 +27,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import secrets
 import stat
 import sys
@@ -35,6 +36,112 @@ import time
 from pathlib import Path
 
 SAFE_COMMANDS = ["id", "whoami", "uname -a", "pwd", "hostname", "php -v"]
+
+# --- Pagar grammar whitelist ------------------------------------------------
+#
+# Sebelumnya penjaganya blocklist: "(;", "|", "&&", "`", "$(", ">". Blocklist
+# selalu kalah: '&' tunggal, '||', newline, '<', '${IFS}', backslash-semicolon
+# semuanya lolos, dan penyerang cukup menemukan satu yang terlewat. Sekarang
+# aturannya ALLOWLIST GRAMMAR:
+#
+#   <executable> [arg]...
+#
+#   * executable  : harus nama pendek huruf kecil dari SAFE_EXECUTABLES
+#                   (perintah identitas/informasi sistem, bukan shell/tool
+#                   jaringan). Tanpa path, tanpa titik, tanpa argumen nempel.
+#   * arg         : hanya [A-Za-z0-9_.:/%+=@,-] (termasuk path absolut, opsi
+#                   '-n', format '%a'), dipisah satu spasi.
+#   * total       : <= MAX_CMD_CHARS karakter.
+#
+# '/' sengaja diizinkan: di dalam arg ia hanya bisa jadi path bagi perintah
+# yang sudah di-whitelist (mis. `ls -la /var/www/html`), bukan pemisah
+# perintah. Yang tidak mungkin adalah executable berupa path ('/bin/sh',
+# './id'): nama executable wajib [a-z][a-z0-9]{0,15} tanpa garis miring.
+#
+# Apa pun yang tidak cocok ditolak, termasuk semua metakarakter shell.
+# PHP-nya sendiri tetap exec() + in_array($cmd, ALLOWED, true): string harus
+# PERSIS sama dengan yang ditanam, jadi tidak ada ruang untuk escaping.
+SAFE_EXECUTABLES = frozenset({
+    "id", "whoami", "pwd", "hostname", "uname", "php",
+    "ls", "date", "uptime", "stat", "head", "tail", "wc", "which",
+})
+
+MAX_CMD_CHARS = 120
+
+# Karakter yang tidak punya alasan sah di whitelist, dipetakan ke nama aturan
+# supaya pesan penolakan menyebut APA yang dilanggar, bukan sekadar "ditolak".
+METAKARAKTER = {
+    ";": "pemisah perintah ';'",
+    "&": "operator '&' (background/chaining)",
+    "|": "pipe '|' (termasuk '||')",
+    "<": "redirect input '<'",
+    ">": "redirect output '>'",
+    "$": "ekspansi variabel '$' (termasuk '${...}' dan '$(...)')",
+    "`": "command substitution backtick",
+    "\\": "escape backslash",
+    '"': "kutip ganda",
+    "'": "kutip tunggal",
+    "\n": "newline",
+    "\r": "carriage return",
+    "(": "subshell '('",
+    ")": "subshell ')'",
+    "{": "brace expansion '{'",
+    "}": "brace expansion '}'",
+    "[": "glob '['",
+    "]": "glob ']'",
+    "*": "glob '*'",
+    "?": "glob '?'",
+    "~": "tilde expansion '~'",
+    "#": "komentar '#'",
+    "\t": "tab (pemisah tak terkendali)",
+}
+
+_ARG = r"[A-Za-z0-9_.:/%+=@,-]+"
+_GRAMMAR = re.compile(
+    rf"^(?P<exe>[a-z][a-z0-9]{{0,15}})(?: (?P<args>{_ARG}(?: {_ARG})*))?$")
+
+
+def validate_command(entry: str) -> str:
+    """Kembalikan alasan penolakan, atau '' bila entri whitelist sah.
+
+    Kontrak sama dengan lib/exploit_runner.validate_command: string alasan,
+    bukan exception. Setiap pesan menyebut aturan yang dilanggar.
+    """
+    if not isinstance(entry, str):
+        return f"ditolak: entri whitelist harus string, bukan {type(entry).__name__}"
+    if not entry or not entry.strip():
+        return "ditolak: entri whitelist kosong"
+    if len(entry) > MAX_CMD_CHARS:
+        return (f"ditolak: entri {len(entry)} karakter > batas "
+                f"{MAX_CMD_CHARS} karakter")
+    # Metakarakter diperiksa SEBELUM cek spasi tepi: newline/tab di ujung
+    # adalah titik injeksi, jadi pesannya harus menyebut karakter itu —
+    # bukan sekadar "spasi di tepi".
+    for ch, rule in METAKARAKTER.items():
+        if ch in entry:
+            return (f"ditolak: {entry!r} memuat {rule} — whitelist hanya boleh "
+                    f"satu perintah tanpa operator shell")
+    if entry != entry.strip():
+        return ("ditolak: spasi di tepi entri "
+                f"{entry!r} — tulis tanpa spasi pembuka/penutup")
+
+    m = _GRAMMAR.fullmatch(entry)
+    if not m:
+        return (f"ditolak: {entry!r} tidak cocok grammar "
+                f"'<executable> [arg]...' (executable huruf kecil, arg hanya "
+                f"[A-Za-z0-9_.:%+=@,-], dipisah satu spasi; tanpa path)")
+    exe = m.group("exe")
+    if exe not in SAFE_EXECUTABLES:
+        return (f"ditolak: executable {exe!r} tidak ada di daftar aman "
+                f"({', '.join(sorted(SAFE_EXECUTABLES))}) — shell/tool jaringan "
+                f"({', '.join(('sh', 'bash', 'nc', 'curl', 'wget'))}) sengaja "
+                f"tidak pernah masuk whitelist")
+    return ""
+
+
+def validate_commands(entries: list[str]) -> list[str]:
+    """Validasi seluruh daftar; kembalikan daftar alasan penolakan (kosong = OK)."""
+    return [why for why in (validate_command(e) for e in entries) if why]
 
 PHP_TEMPLATE = r"""<?php
 /**
@@ -125,6 +232,15 @@ def fingerprint(body: str) -> str:
 
 def build_shell(*, author: str, purpose: str, ttl_h: int, commands: list[str],
                 pw_hash: str) -> str:
+    """Render sumber PHP. Menolak (ValueError) bila daftar command tidak sah.
+
+    Validasi diulang di sini, bukan hanya di main(): build_shell bisa
+    dipanggil langsung dari kode lain, dan template ini menanam daftar ke
+    dalam `const ALLOWED`. Kalau ada entri nakal lolos, ia ikut tertanam.
+    """
+    masalah = validate_commands(commands)
+    if masalah:
+        raise ValueError("command whitelist tidak sah: " + "; ".join(masalah))
     return PHP_TEMPLATE.format(
         author=author.replace("*/", ""),
         purpose=purpose.replace("*/", ""),
@@ -184,10 +300,14 @@ def main() -> int:
         return 0
 
     commands = [c.strip() for c in a.commands.split(",") if c.strip()] or list(SAFE_COMMANDS)
-    risky = [c for c in commands if any(t in c for t in (";", "|", "&&", "`", "$(", ">"))]
-    if risky:
-        print("DITOLAK: command berisi operator shell (;|&&`$>):", risky, file=sys.stderr)
-        print("Whitelist harus perintah tunggal, bukan rangkaian.", file=sys.stderr)
+    masalah = validate_commands(commands)
+    if masalah:
+        print("DITOLAK: whitelist command tidak sah:", file=sys.stderr)
+        for why in masalah:
+            print(f"  - {why}", file=sys.stderr)
+        print("Whitelist harus perintah tunggal '<executable> [arg]...' tanpa "
+              "metakarakter shell (; & | < > $ ` \\ \" ' newline ( ) { } [ ] * ? ~ #).",
+              file=sys.stderr)
         return 2
     if a.cost < 10:
         print("DITOLAK: --cost minimal 10 (bcrypt terlalu lemah di bawah itu)", file=sys.stderr)
