@@ -152,7 +152,7 @@ python3 docker/offsets.py          # → out/offsets.env
 # 1) run the chain with automatic proof retrieval
 php2shell exploit \
     -u http://127.0.0.1:8095/index.php --force --yes \
-    --exploit-profile bookworm -c 'id>/out/p1'
+    --allow-private-target --exploit-profile bookworm -c 'id>/out/p1'
 ```
 
 ```text
@@ -189,9 +189,13 @@ Two different scenarios, and **the commands differ**:
 
 ```bash
 php2shell exploit -u http://127.0.0.1:8095/index.php --force --yes \
-    --exploit-profile bookworm -c 'id>/out/p1'
+    --allow-private-target --exploit-profile bookworm -c 'id>/out/p1'
 # → PROOF (8.3s): uid=33(www-data)   ← command output READ back automatically
 ```
+
+`--allow-private-target` is required here: loopback is refused by default so the
+tool cannot be pointed at internal services by a redirect. The lab target is the
+one case where you opt in.
 
 Why is it readable? `id>/out/p1` writes the output of `id` to the file `/out/p1`
 inside the container, and that folder **is mounted onto the host** (`out/p1`). The
@@ -304,7 +308,7 @@ down, or the READ version is already patched.
 ```bash
 # local lab (mount /out) → command output READ back:
 php2shell.py exploit -u http://127.0.0.1:8095/index.php --force --yes \
-    --exploit-profile bookworm -c 'id>/out/p1'
+    --allow-private-target --exploit-profile bookworm -c 'id>/out/p1'
 
 # live target → BLIND (command runs, output not readable — by design):
 php2shell.py exploit -u https://target.example/ --yes -c 'id'
@@ -313,7 +317,7 @@ Important options:
 | Flag | Function |
 |---|---|
 | `-c / --cmd` | proof command, max 14 bytes; default `id` |
-| `--allow-cmd CMD` | add to the whitelist (ls/cat/df/uname/dll) — repeatable |
+| `--allow-cmd CMD` | add to the whitelist (uname/hostname/pwd/ls/cat/df/uptime/who/w/env) — repeatable |
 | `--exploit-profile {bookworm,lab}` | set the built-in offsets (bookworm = the official image) |
 | `--zif-offset / --dtor-offset / --htdata-offset` | manual offsets for other builds |
 | `--retries N` | retries per stage (default 3, heap-fresh via worker rotation) |
@@ -401,6 +405,47 @@ Produces a PHP file (32-hex name) + `CREDENTIALS.txt` (bcrypt, NOT
 stored inside the shell). Features: bcrypt password, per-shell command whitelist,
 expiry TTL, rate limit. **Generator only — it does not upload.**
 Local test: `php -l <file>` then `php -S 127.0.0.1:8099`.
+
+The default shell is **whitelist-only**: the command must match one of the
+commands baked in at generate time, there is no upload, no `eval`, no reverse
+shell.
+
+#### Free mode is opt-in, and it is unrestricted RCE
+
+`shell/web_shell_gen.py` (the two-variant generator: a browser login page plus a
+CLI variant) has a `--variant web` shell with a "free mode" checkbox. Free mode
+calls `proc_open()` with the text typed in the browser, i.e. **arbitrary command
+execution from a browser** — the same power as an interactive shell. It is
+therefore not part of the default build:
+
+- `allow_free_mode` defaults to `False`; the free-mode PHP block, the checkbox and
+  its JS are simply not written into the file unless `--allow-free-mode` is passed.
+- With `--allow-free-mode`, the generator prints a warning to **stderr**
+  (`PERINGATAN: ... MODE BEBAS ... perintah ARBITRER ...`), and
+  `CREDENTIALS-<ts>.txt` records `free mode: YA (proc_open, perintah arbitrer)`.
+- Ask for it only when the engagement explicitly permits demonstration of full
+  execution, and delete the shell as soon as the engagement ends.
+
+```bash
+# whitelist-only (default):
+/home/lota1337/myenv/bin/python shell/web_shell_gen.py --out <dir> --ttl 24 --variant web
+
+# unrestricted execution — explicit opt-in, prints a stderr warning:
+/home/lota1337/myenv/bin/python shell/web_shell_gen.py --out <dir> --ttl 24 \
+    --variant web --allow-free-mode
+```
+
+**The password is not a substitute for OS-level access control.** A bcrypt
+password, a TTL and a per-session CSRF token protect the *shell file* from other
+web users; they do not limit what the shell can do once it is running. The
+boundary is the web server user's OS privileges, and that boundary has to be set
+where the process lives — `chmod` on the webroot, `disable_functions`
+(`proc_open`, `shell_exec`, `system`, `passthru`, `exec`), `open_basedir`, a
+dedicated low-privilege user or container. If PHP on the target can run
+`proc_open`/`shell_exec` as the Apache user, then a shell with free mode (or a
+whitelisted shell whose whitelist was extended too far) does exactly what that
+user is allowed to do — a password changes nothing about that. Set the OS/PHP
+restrictions first, then decide whether the shell is needed at all.
 
 ### `version` — automatic version check
 
@@ -506,10 +551,40 @@ Table sources: `devploit/php2shell` (13 heap profiles, 5 verified RCE),
 | `--timeout N` | HTTP timeout per request (default 15s) |
 | `--proxy URL` | go through a proxy, e.g. `http://127.0.0.1:8080` |
 | `--audit FILE` | log EVERY request to JSONL (evidence + troubleshooting) |
+| `--insecure` | DISABLE TLS verification (default: verification ON, `CERT_REQUIRED` + hostname check). Self-signed lab certificates only |
+| `--no-follow-redirects` | stop at the first 3xx (default: redirects are followed manually, max 5 hops, and every hop is re-validated by the anti-SSRF policy before the packet is sent) |
+| `--allow-private-target` | allow loopback / RFC1918 / link-local targets (default: REJECTED to prevent SSRF; lab use only). It does **not** open cloud metadata endpoints — nothing does, see below |
 | `--no-upload-progress` | skip the upload_progress probe during detect |
 | `--no-display-errors` | skip the display_errors probe during detect |
 | `--json / --csv` | report file output |
 | `-v, --verbose` | show every request (status, duration, body size, error) |
+
+#### Why the defaults are safe
+
+All three relaxation flags above are **opt-in and off by default**, because the
+defaults are the safe behaviour:
+
+- **TLS is verified.** https targets are checked against the system CA store with
+  hostname verification on (`CERT_REQUIRED` + `check_hostname`), on both the
+  curl_cffi path and the raw-socket chain path. Before this change verification was
+  silently off, so an intercepting proxy could read every request — including ones
+  carrying target cookies — without any signal. Turning it off now takes an
+  explicit `--insecure`.
+- **Redirects are bounded and validated.** A target cannot hand the tool a
+  `Location:` and have it follow blindly: each hop (and the first URL) is
+  validated by `lib/target_policy.py` **before** the packet is sent, and the chain
+  stops at 5 hops. `--no-follow-redirects` simply stops at the first 3xx instead.
+- **Private and metadata targets are rejected.** `127.0.0.0/8`, RFC1918,
+  link-local and reserved ranges are refused unless `--allow-private-target` is
+  given — that flag is for the local lab only.
+
+  The cloud metadata / IMDS endpoints (`169.254.169.254`, `fd00:ec2::254`,
+  `100.100.100.200`, `192.0.0.192`) are refused **always**, including with
+  `--allow-private-target`, and including a hostname that merely *resolves* to
+  them. There is **no flag anywhere in the tool that opens them**: an SSRF that
+  reads instance credentials is not a lab convenience, so it has no switch. On a
+  loopback lab target, `--allow-private-target` is what you need; it will never
+  be the reason a metadata request succeeds.
 
 ### Advanced flags (scan & exploit)
 
@@ -541,6 +616,10 @@ Table sources: `devploit/php2shell` (13 heap profiles, 5 verified RCE),
 | `--commands "a,b,c"` | command whitelist inside the webshell (default `id,whoami`) |
 | `--author NAME` | author signature in the webshell header |
 | `--purpose TEXT` | purpose note in the webshell header |
+
+The standalone generator `shell/web_shell_gen.py` (2 variants) has its own flags:
+`--variant {web,cli,both}`, `--ttl`, `--author`, and the opt-in `--allow-free-mode`
+described above. `php2shell.py shell` deliberately exposes no free-mode flag.
 
 ---
 
@@ -671,7 +750,7 @@ rule we applied to upstream.
 ## ❖ How it works
 
 ```text
-┌──────────────┐   ① 12MB multipart → OOM inside
+┌──────────────┐   ① multipart field sized above memory_limit → OOM inside
 │   REQUEST A  │      php_session_initialize()
 │  (producer)  │      → PS(http_session_vars) dangles
 │              │      → Apache prefork worker dies (SIGABRT)

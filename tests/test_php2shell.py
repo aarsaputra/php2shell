@@ -936,5 +936,120 @@ class TestOomProbeBaru(unittest.TestCase):
         self.assertIn("--no-oom", src_cli)
 
 
+class TestDokumentasiPagar(unittest.TestCase):
+    """Dokumentasi wajib menutup temuan audit PY-006 butir 4+5 dan tiga flag
+    pagar transport. Tes ini membaca file dokumentasi DARI DISK dan meng-assert
+    isinya — kalau kode berubah tapi dokumen tidak, tes gagal.
+
+    Sengaja toleran format: pencocokan case-insensitive dan memakai regex,
+    supaya penulisan ulang paragraf tidak memecahkan tes selama substansinya
+    tetap ada.
+    """
+
+    README = os.path.join(TOOLKIT, "README.md")
+    README_ID = os.path.join(TOOLKIT, "readme_id.md")
+    TUTORIAL = os.path.join(TOOLKIT, "docs", "TUTORIAL.md")
+    SEMUA = (README, README_ID, TUTORIAL)
+
+    def _teks(self, path):
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+
+    def test_tiga_flag_pagar_terdokumentasi(self):
+        """--insecure, --no-follow-redirects, --allow-private-target harus
+        disebut di ketiga file dokumentasi."""
+        for path in self.SEMUA:
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertIn("--insecure", teks)
+                self.assertIn("--no-follow-redirects", teks)
+                self.assertIn("--allow-private-target", teks)
+
+    def test_default_pagar_dijelaskan(self):
+        """Default-nya AMAN harus tertulis: verifikasi TLS aktif, redirect
+        dibatasi/divalidasi, target privat ditolak."""
+        for path in self.SEMUA:
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertRegex(teks, r"(?i)CERT_REQUIRED|verifikasi[^\n]{0,20}TLS|TLS[^\n]{0,20}verif")
+                self.assertRegex(teks, r"(?i)\b5\s*hop\b|maks[^\n]{0,10}5\s*hop|max(?:imum)?\s*5\s*hops?")
+                self.assertRegex(teks, r"(?i)loopback|RFC\s?1918")
+
+    def test_metadata_cloud_tidak_punya_flag(self):
+        """Endpoint metadata/IMDS harus disebut DAN dinyatakan tidak bisa
+        dibuka dengan flag apa pun — supaya operator lab tidak salah kira."""
+        for path in self.SEMUA:
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertIn("169.254.169.254", teks)
+                self.assertRegex(
+                    teks,
+                    r"(?i)(tidak ada flag|no flag)[^.]{0,120}",
+                )
+
+    def test_mode_bebas_opt_in(self):
+        """Mode bebas generator web shell HARUS disebut sebagai opt-in
+        --allow-free-mode, bukan fitur default."""
+        for path in self.SEMUA:
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertIn("--allow-free-mode", teks)
+                self.assertRegex(
+                    teks,
+                    r"(?i)(opt-in|eksplisit|explicit|tidak ada di build default|"
+                    r"not part of the default|default\w*\s*`?False`?)",
+                )
+
+    def test_mode_bebas_bukan_fitur_nyaman(self):
+        """Peringatan: mode bebas = eksekusi arbitrer / proc_open, bukan fitur
+        kenyamanan; harus ada peringatan stderr."""
+        for path in self.SEMUA:
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertIn("proc_open", teks)
+                self.assertRegex(teks, r"(?i)stderr")
+
+    def test_password_bukan_pengganti_batas_os(self):
+        """PY-006 butir 5: password TIDAK boleh dipresentasikan sebagai
+        pengganti pembatasan hak akses OS."""
+        pola = {
+            self.README: r"(?i)not a substitute",
+            self.README_ID: r"(?i)bukan pengganti",
+            self.TUTORIAL: r"(?i)bukan pengganti",
+        }
+        for path, regex in pola.items():
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertRegex(teks, regex)
+                # batas OS-nya harus disebut konkret, bukan sekadar slogan
+                self.assertRegex(teks, r"(?i)disable_functions")
+                self.assertRegex(teks, r"(?i)open_basedir")
+
+    def test_tidak_ada_klaim_default_12_mb(self):
+        """--huge-mb sudah otomatis; klaim 'default 12 MB' adalah artefak lama
+        yang salah dan tidak boleh muncul lagi (menyebut nilai historis
+        'dulu dipaku 12 MB' tetap boleh)."""
+        pola = re.compile(
+            r"(?i)(default\s*[:=]?\s*12\s?MB|12\s?MB\s*(?:default|bawaan)|"
+            r"12MB\s*(?:default|bawaan))"
+        )
+        for path in self.SEMUA:
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertIsNone(pola.search(teks),
+                                  f"klaim 'default 12 MB' masih ada di {path}")
+
+    def test_catatan_deadline_dan_huge_mb_tetap_ada(self):
+        """Perbaikan audit lain tidak boleh hilang: --exploit-timeout satu
+        deadline absolut, --huge-mb otomatis dari memory_limit."""
+        for path in (self.README, self.README_ID):
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertRegex(teks, r"(?i)exploit-timeout")
+                self.assertRegex(teks, r"(?i)deadline")
+                self.assertRegex(teks, r"(?i)huge-mb")
+                self.assertRegex(teks, r"(?i)memory_limit")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

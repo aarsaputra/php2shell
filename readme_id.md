@@ -152,7 +152,7 @@ python3 docker/offsets.py          # → out/offsets.env
 # 1) run the chain with automatic proof retrieval
 php2shell exploit \
     -u http://127.0.0.1:8095/index.php --force --yes \
-    --exploit-profile bookworm -c 'id>/out/p1'
+    --allow-private-target --exploit-profile bookworm -c 'id>/out/p1'
 ```
 
 ```text
@@ -189,9 +189,13 @@ Dua skenario berbeda, dan **command-nya beda**:
 
 ```bash
 php2shell exploit -u http://127.0.0.1:8095/index.php --force --yes \
-    --exploit-profile bookworm -c 'id>/out/p1'
+    --allow-private-target --exploit-profile bookworm -c 'id>/out/p1'
 # → PROOF (8.3s): uid=33(www-data)   ← hasil perintah TERBACA otomatis
 ```
+
+`--allow-private-target` wajib di sini: loopback ditolak secara default supaya
+tool tidak bisa diarahkan ke layanan internal lewat redirect. Target lab adalah
+satu-satunya kasus di mana kamu memilih masuk secara sadar.
 
 Kenapa bisa terbaca? `id>/out/p1` menulis hasil `id` ke file `/out/p1` di
 dalam container, dan folder itu **di-mount ke host** (`out/p1`). Toolkit
@@ -302,7 +306,7 @@ versi TERBACA sudah-patch.
 ```bash
 # lab lokal (mount /out) → hasil perintah TERBACA:
 php2shell.py exploit -u http://127.0.0.1:8095/index.php --force --yes \
-    --exploit-profile bookworm -c 'id>/out/p1'
+    --allow-private-target --exploit-profile bookworm -c 'id>/out/p1'
 
 # live target → BLIND (perintah jalan, output tak terbaca — by design):
 php2shell.py exploit -u https://target.example/ --yes -c 'id'
@@ -311,7 +315,7 @@ Opsi penting:
 | Flag | Fungsi |
 |---|---|
 | `-c / --cmd` | perintah proof, maks 14 byte; default `id` |
-| `--allow-cmd CMD` | tambah whitelist (ls/cat/df/uname/dll) — berulang |
+| `--allow-cmd CMD` | tambah whitelist (uname/hostname/pwd/ls/cat/df/uptime/who/w/env) — berulang |
 | `--exploit-profile {bookworm,lab}` | set offset bawaan (bookworm = image resmi) |
 | `--zif-offset / --dtor-offset / --htdata-offset` | offset manual utk build lain |
 | `--retries N` | retry per stage (default 3, heap-fresh via rotasi worker) |
@@ -401,6 +405,46 @@ Menghasilkan file PHP (nama 32-hex) + `CREDENTIALS.txt` (bcrypt, TIDAK
 disimpan di shell). Fitur: password bcrypt, whitelist perintah per shell,
 TTL kedaluwarsa, rate limit. **Generator saja — tidak meng-upload.**
 Uji lokal: `php -l <file>` lalu `php -S 127.0.0.1:8099`.
+
+Shell bawaan **whitelist-only**: perintah harus persis salah satu yang ditanam
+saat generate, tanpa upload, tanpa `eval`, tanpa reverse shell.
+
+#### Mode bebas itu opt-in, dan isinya RCE tanpa batas
+
+`shell/web_shell_gen.py` (generator dua varian: halaman login browser + varian
+CLI) punya varian `--variant web` dengan checkbox "mode bebas". Mode bebas
+memanggil `proc_open()` dengan teks yang diketik di browser — artinya **eksekusi
+perintah arbitrer dari browser**, sekuat shell interaktif. Karena itu ia tidak
+ikut di build default:
+
+- `allow_free_mode` default `False`; blok PHP mode bebas, checkbox, dan JS-nya
+  tidak ditulis ke file sama sekali kecuali `--allow-free-mode` diberikan.
+- Dengan `--allow-free-mode`, generator mencetak peringatan ke **stderr**
+  (`PERINGATAN: ... MODE BEBAS ... perintah ARBITRER ...`), dan
+  `CREDENTIALS-<ts>.txt` mencatat `free mode: YA (proc_open, perintah arbitrer)`.
+- Minta hanya bila engagement memang mengizinkan demonstrasi eksekusi penuh, dan
+  hapus shell begitu engagement selesai.
+
+```bash
+# whitelist-only (default):
+/home/lota1337/myenv/bin/python shell/web_shell_gen.py --out <dir> --ttl 24 --variant web
+
+# eksekusi tanpa batas — opt-in eksplisit, mencetak peringatan ke stderr:
+/home/lota1337/myenv/bin/python shell/web_shell_gen.py --out <dir> --ttl 24 \
+    --variant web --allow-free-mode
+```
+
+**Password bukan pengganti pembatasan hak akses OS.** Password bcrypt, TTL, dan
+token CSRF per-sesi melindungi *file shell* dari pengguna web lain; semuanya
+tidak membatasi apa yang bisa dilakukan shell begitu ia berjalan. Batas
+sesungguhnya adalah hak akses OS user web server, dan batas itu harus dipasang
+di tempat prosesnya hidup — `chmod` pada webroot, `disable_functions`
+(`proc_open`, `shell_exec`, `system`, `passthru`, `exec`), `open_basedir`, user
+low-privilege khusus, atau container. Kalau PHP di target bisa menjalankan
+`proc_open`/`shell_exec` sebagai user Apache, maka shell dengan mode bebas (atau
+shell whitelist yang whitelist-nya diperlebar terlalu jauh) melakukan persis apa
+yang boleh dilakukan user itu — password tidak mengubah apa pun soal itu. Pasang
+dulu pembatasan OS/PHP, baru putuskan apakah shell-nya masih perlu.
 
 ### `version` — cek versi otomatis
 
@@ -505,10 +549,41 @@ sendiri (`php:8.4.26-apache`). Tidak ada angka yang dikarang.
 | `--timeout N` | timeout HTTP per request (default 15s) |
 | `--proxy URL` | lewat proxy, mis. `http://127.0.0.1:8080` |
 | `--audit FILE` | catat SEMUA request ke JSONL (bukti + troubleshooting) |
+| `--insecure` | MATIKAN verifikasi TLS (default: verifikasi AKTIF, `CERT_REQUIRED` + cek hostname). Hanya untuk lab bersertifikat self-signed |
+| `--no-follow-redirects` | berhenti di 3xx pertama (default: redirect diikuti manual, maks 5 hop, dan tiap hop divalidasi ulang oleh kebijakan anti-SSRF sebelum paket dikirim) |
+| `--allow-private-target` | izinkan target loopback / RFC1918 / link-local (default: DITOLAK untuk mencegah SSRF; hanya untuk lab). Flag ini **tidak** membuka endpoint metadata cloud — tidak ada yang membukanya, lihat di bawah |
 | `--no-upload-progress` | skip probe upload_progress saat detect |
 | `--no-display-errors` | skip probe display_errors saat detect |
 | `--json / --csv` | output file laporan |
 | `-v, --verbose` | tampilkan tiap request (status, durasi, ukuran body, error) |
+
+#### Kenapa default-nya aman
+
+Ketiga flag pelonggaran di atas **harus diminta eksplisit dan mati secara default**,
+karena default-nya justru perilaku yang aman:
+
+- **TLS diverifikasi.** Target https dicek terhadap CA store sistem dengan
+  verifikasi hostname menyala (`CERT_REQUIRED` + `check_hostname`), baik di jalur
+  curl_cffi maupun di jalur soket mentah mesin rantai. Sebelum perbaikan ini
+  verifikasi mati tanpa pemberitahuan, sehingga proxy penyadap bisa membaca setiap
+  request — termasuk yang membawa cookie target — tanpa satu pun sinyal. Mematikan
+  verifikasi sekarang butuh `--insecure` yang diketik sendiri.
+- **Redirect dibatasi dan divalidasi.** Target tidak bisa menyodorkan `Location:`
+  lalu tool mengikutinya buta: tiap hop (termasuk URL pertama) divalidasi
+  `lib/target_policy.py` **sebelum** paket dikirim, dan rantai berhenti di 5 hop.
+  `--no-follow-redirects` hanya membuatnya berhenti di 3xx pertama.
+- **Target privat dan metadata ditolak.** `127.0.0.0/8`, RFC1918, link-local, dan
+  rentang reserved ditolak kecuali `--allow-private-target` diberikan — flag itu
+  untuk lab lokal saja.
+
+  Endpoint metadata cloud / IMDS (`169.254.169.254`, `fd00:ec2::254`,
+  `100.100.100.200`, `192.0.0.192`) ditolak **selalu**, termasuk saat
+  `--allow-private-target` aktif, termasuk bila yang dikirim adalah hostname yang
+  sekadar *me-resolve* ke alamat itu. **Tidak ada flag mana pun di tool ini yang
+  membukanya**: SSRF yang membaca kredensial instance bukan kenyamanan lab, jadi
+  memang tidak diberi saklar. Di target lab loopback, `--allow-private-target`
+  adalah yang kamu butuhkan; flag itu tidak akan pernah jadi sebab sebuah request
+  metadata berhasil.
 
 ### Flag lanjutan (scan & exploit)
 
@@ -540,6 +615,11 @@ sendiri (`php:8.4.26-apache`). Tidak ada angka yang dikarang.
 | `--commands "a,b,c"` | whitelist perintah di webshell (default `id,whoami`) |
 | `--author NAMA` | tanda tangan author di header webshell |
 | `--purpose TEKS` | keterangan tujuan di header webshell |
+
+Generator mandiri `shell/web_shell_gen.py` (2 varian) punya flag sendiri:
+`--variant {web,cli,both}`, `--ttl`, `--author`, dan `--allow-free-mode` yang
+opt-in (dijelaskan di atas). `php2shell.py shell` sengaja tidak menyediakan flag
+mode bebas.
 
 ---
 
@@ -670,7 +750,7 @@ aturan yang sama kami pakai ke upstream.
 ## ❖ How it works
 
 ```text
-┌──────────────┐   ① 12MB multipart → OOM inside
+┌──────────────┐   ① field multipart di atas memory_limit → OOM inside
 │   REQUEST A  │      php_session_initialize()
 │  (producer)  │      → PS(http_session_vars) dangles
 │              │      → Apache prefork worker dies (SIGABRT)
