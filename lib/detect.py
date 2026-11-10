@@ -293,7 +293,8 @@ def detect(
             oom = oom_detect(url, transport=t, sapi=sapi)
             d.signals.append(
                 f"oom: verdict={oom.verdict} signal={oom.signal} "
-                f"probes={oom.probes_sent} ({oom.evidence})"
+                f"confirmed={oom.confirmed} probes={oom.probes_sent} "
+                f"({oom.evidence})"
             )
             if oom.verdict == "vulnerable":
                 d.verdict = "vulnerable"
@@ -303,6 +304,23 @@ def detect(
                 if not d.php_version:
                     # tandai bahwa verdict ini dari probe aktif, bukan versi
                     d.branch = d.branch or "unknown-branch"
+            elif oom.verdict == "suspected":
+                # Bukti lemah: empty_500 / worker_abort / empty_200 juga
+                # dihasilkan upstream/gateway/worker crash non-PHP. JANGAN
+                # naikkan verdict versi menjadi vulnerable — catat sebagai
+                # dugaan bila verdict masih unknown, dan selalu pertahankan
+                # bukti mentahnya di signals + reason.
+                note = (
+                    f"OOM probe: sinyal {oom.signal} (dugaan worker/gateway "
+                    "abort, bukan bukti fatal-in-parser)"
+                )
+                d.signals.append(note)
+                if d.verdict == "unknown":
+                    d.reason += (
+                        f" · {note} — verdict tetap unknown; verifikasi di lab "
+                        "(bandingkan respons control vs probe, cek "
+                        "memory_limit/log FPM)"
+                    )
             elif oom.verdict == "not_vulnerable" and d.verdict == "unknown":
                 d.verdict = "not_vulnerable"
                 d.reason = (
