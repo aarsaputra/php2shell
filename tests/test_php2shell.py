@@ -305,7 +305,7 @@ class TestKlaimBanner(unittest.TestCase):
         perubahan byte berikutnya pada lib/chain.py menggagalkan tes dan
         memaksa pembaca diff-nya dulu.
 
-        Hash ini mencakup tiga perubahan sah (audit hardening):
+        Hash ini mencakup empat perubahan sah (audit hardening):
           1. verifikasi TLS AKTIF secara default (CERT_REQUIRED +
              check_hostname) — sebelumnya CERT_NONE, artinya tool melewati
              verifikasi sertifikat tanpa diminta. Pelewatan sekarang harus
@@ -319,6 +319,11 @@ class TestKlaimBanner(unittest.TestCase):
              `DeadlineExceeded`) — semua operasi socket/retry/join memakai
              sisa anggaran, sehingga timeout tidak lagi akumulatif per
              operasi dan total eksekusi terbatas pada deadline operator.
+          4. DNS pinning di `Target._connect()`: `resolve_pinned()` dipanggil
+             SEKALI dan soket disambung ke IP hasil validasi (bukan
+             `create_connection(self.host, ...)` yang me-resolve ulang) —
+             menutup celah DNS rebinding. `allow_private` dipertahankan True
+             (target lab) sementara endpoint metadata cloud tetap ditolak.
         """
         import hashlib
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -326,7 +331,7 @@ class TestKlaimBanner(unittest.TestCase):
         with open(p, "rb") as fh:
             now = hashlib.sha256(fh.read()).hexdigest()
         self.assertEqual(now,
-            "0882177925c493eceffb7af1092a4a102f2522c5350875d463025eaaa62c85da",
+            "69e1cad001a23994836ca4f38c4602e1b940c297e717e2c4e8c6c2f375a96031",
             "lib/chain.py berubah — review diff, lalu perbarui hash ini")
 
 

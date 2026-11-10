@@ -31,6 +31,7 @@ dikunci (temuan audit):
 import ipaddress
 import json
 import os
+import socket
 import ssl
 import stat
 import sys
@@ -866,6 +867,260 @@ class TestCliFlags(unittest.TestCase):
         self.assertNotIn("header/body bersih", reason)
         # Gerbang akhir tetap tidak mengizinkan exploit.
         self.assertNotEqual(rec["preflight"].get("status"), "ready")
+
+
+class TestDnsRebinding(unittest.TestCase):
+    """DNS rebinding: satu resolusi, lalu koneksi WAJIB dipin ke IP itu.
+
+    Tanpa pin, `check_url()` memvalidasi IP A tetapi lapisan koneksi
+    me-resolve ulang dan bisa mendapat IP B (`169.254.169.254` pada jawaban
+    kedua) — validasi tadi tidak menjaga apa pun. Tes di kelas ini memalsukan
+    resolver dengan SEQUENCE: panggilan pertama publik, panggilan kedua
+    metadata. Pemanggilan kedua yang terjadi = tes gagal (getaddrinfo count).
+    """
+
+    URL = "http://fake.invalid:8080/x.php"
+    IP_PUBLIK = "93.184.216.34"
+    IP_METADATA = "169.254.169.254"
+
+    def _resolver_sequence(self):
+        """Panggilan 1 -> publik, panggilan 2..n -> metadata (rebinding)."""
+        calls = []
+
+        def fake_getaddrinfo(host, port=None, *args, **kwargs):
+            calls.append((host, port))
+            ip = self.IP_PUBLIK if len(calls) == 1 else self.IP_METADATA
+            return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP,
+                     "", (ip, port or 0))]
+
+        return calls, fake_getaddrinfo
+
+    def test_urllib_satu_resolusi_dan_pin_ke_ip_validasi(self):
+        import urllib.error
+
+        calls, fake = self._resolver_sequence()
+        target_calls = []
+
+        def fake_create_connection(address, *args, **kwargs):
+            target_calls.append(address)
+            raise OSError("mock: tidak ada server nyata")
+
+        t = Transport(delay=0.0, retries=0)
+        self.addCleanup(t.close)
+        with mock.patch.object(transport_mod, "HAVE_CURL_CFFI", False), \
+                mock.patch("socket.getaddrinfo", side_effect=fake), \
+                mock.patch("socket.create_connection", side_effect=fake_create_connection):
+            with self.assertRaises((urllib.error.URLError, OSError)):
+                t._single("GET", self.URL, None, None)
+
+        # Satu resolusi. Panggilan kedua akan mengembalikan metadata dan
+        # membatalkan request (bukan menyambung ke sana) — jadi count ini
+        # sekaligus membuktikan tidak ada resolusi ulang di lapisan koneksi.
+        self.assertEqual(len(calls), 1,
+                         f"hostname di-resolve {len(calls)}x: {calls}")
+        self.assertEqual(calls[0][0], "fake.invalid")
+        # TCP mendarat di IP yang sudah divalidasi, BUKAN di metadata.
+        self.assertTrue(target_calls, "tidak ada percobaan koneksi")
+        self.assertEqual(target_calls, [(self.IP_PUBLIK, 8080)],
+                         f"koneksi mendarat di {target_calls}")
+        self.assertNotIn(self.IP_METADATA, [a[0] for a in target_calls])
+
+    def test_urllib_https_pin_ip_tapi_sni_hostname_asli(self):
+        """HTTPS: soket ke IP pin, `server_hostname` tetap hostname URL."""
+        wrapped = {}
+
+        class FakeTlsSock:
+            def setsockopt(self, *a):
+                pass
+
+            def makefile(self, *a, **kw):
+                raise OSError("mock: tanpa server nyata")
+
+        ctx = mock.Mock()
+
+        def fake_wrap(sock, server_hostname=None, **kw):
+            wrapped["server_hostname"] = server_hostname
+            return FakeTlsSock()
+
+        ctx.wrap_socket = fake_wrap
+        calls, fake = self._resolver_sequence()
+
+        def fake_create_connection(address, *args, **kwargs):
+            wrapped.setdefault("address", address)
+            return mock.Mock()
+
+        with mock.patch("socket.getaddrinfo", side_effect=fake), \
+                mock.patch("socket.create_connection",
+                           side_effect=fake_create_connection):
+            # Dibangun DI DALAM patch: `http.client` menyimpan
+            # `self._create_connection = socket.create_connection` saat __init__.
+            conn = transport_mod._PinnedHTTPSConnection(
+                "fake.invalid", 8443, context=ctx, pinned_ip=self.IP_PUBLIK,
+                timeout=5,
+            )
+            conn.connect()
+
+        self.assertEqual(wrapped["address"], (self.IP_PUBLIK, 8443))
+        self.assertEqual(wrapped["server_hostname"], "fake.invalid",
+                         "SNI wajib hostname asli, bukan IP pin")
+        self.assertEqual(len(calls), 0, "kelas ber-pin tidak boleh resolve sendiri")
+
+    def test_resolve_pinned_metadata_selalu_ditolak(self):
+        for addr in policy.METADATA_ADDRESSES:
+            for allow in (False, True):
+                with self.subTest(addr=addr, allow_private=allow):
+                    with self.assertRaises(policy.PolicyError) as ctx:
+                        policy.resolve_pinned(addr, 80, allow_private=allow)
+                    msg = str(ctx.exception)
+                    self.assertIn("metadata", msg.lower())
+                    self.assertIn("SSRF", msg)
+                    self.assertIn("--allow-private-target", msg,
+                                  "pesan harus menegaskan flag lab tidak berlaku")
+
+    def test_resolve_pinned_metadata_dari_dns_selalu_ditolak(self):
+        """A record metadata juga ditolak, termasuk saat allow_private=True."""
+        fake = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP,
+                 "", (self.IP_METADATA, 80))]
+        for allow in (False, True):
+            with self.subTest(allow_private=allow):
+                with mock.patch("socket.getaddrinfo", return_value=fake):
+                    with self.assertRaises(policy.PolicyError) as ctx:
+                        policy.resolve_pinned("metadata.internal", 80, allow_private=allow)
+                msg = str(ctx.exception)
+                self.assertIn("metadata", msg.lower())
+                self.assertIn("SSRF", msg)
+
+    def test_resolve_pinned_privat_ditolak_kecuali_allow_private(self):
+        fake = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP,
+                 "", ("10.1.2.3", 80))]
+        with mock.patch("socket.getaddrinfo", return_value=fake):
+            with self.assertRaises(policy.PolicyError) as ctx:
+                policy.resolve_pinned("lab.internal", 80, allow_private=False)
+            msg = str(ctx.exception)
+            self.assertIn("10.1.2.3", msg)
+            self.assertIn("SSRF", msg)
+            self.assertIn("--allow-private-target", msg)
+
+            self.assertEqual(
+                policy.resolve_pinned("lab.internal", 80, allow_private=True),
+                "10.1.2.3",
+            )
+            self.assertEqual(
+                policy.resolve_pinned_candidates("lab.internal", 80,
+                                                 allow_private=True),
+                ["10.1.2.3"],
+            )
+
+    def test_resolve_pinned_memilih_ipv4_dan_satu_resolusi(self):
+        """Banyak A/AAAA: semua divalidasi, hasil memilih IPv4 lebih dulu."""
+        fake = [
+            (socket.AF_INET6, socket.SOCK_STREAM, socket.IPPROTO_TCP,
+             "", ("2606:4700::1111", 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP,
+             "", ("93.184.216.34", 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP,
+             "", ("93.184.216.34", 80)),   # duplikat dari resolver
+        ]
+        with mock.patch("socket.getaddrinfo", return_value=fake) as gad:
+            ip = policy.resolve_pinned("example.com", 80)
+            cands = policy.resolve_pinned_candidates("example.com", 80)
+        self.assertEqual(ip, "93.184.216.34")
+        self.assertEqual(cands, ["93.184.216.34", "2606:4700::1111"],
+                         "duplikat tidak di-dedupe / urutan IPv4 bukan pertama")
+        self.assertEqual(gad.call_count, 2, "satu panggilan per fungsi")
+
+    def test_resolve_pinned_dns_gagal_bukan_policyerror(self):
+        """DNS gagal = kegagalan jaringan (`ResolveError`/OSError), bukan blokir."""
+        with mock.patch("socket.getaddrinfo", side_effect=socket.gaierror("NXDOMAIN")):
+            with self.assertRaises(policy.ResolveError) as ctx:
+                policy.resolve_pinned("nx.invalid", 80)
+        msg = str(ctx.exception)
+        self.assertIn("tidak bisa resolve", msg)
+        self.assertIsInstance(ctx.exception, OSError)
+        self.assertNotIsInstance(ctx.exception, policy.PolicyError)
+
+    def test_check_url_resolve_false_tidak_menyentuh_resolver(self):
+        """`resolve=False`: cek sintaks/kebijakan tetap, DNS diserahkan ke pin.
+
+        Tanpa ini nama di-resolve dua kali per hop (validasi + koneksi) dan
+        dua jawaban DNS bisa berbeda — persis celah yang ditutup.
+        """
+        with mock.patch("socket.getaddrinfo",
+                        side_effect=AssertionError("resolver dipanggil")):
+            # Lolos tanpa resolusi.
+            policy.check_url("http://fake.invalid/x.php", resolve=False)
+            policy.check_url("http://fake.invalid/x.php", allow_private=True,
+                             resolve=False)
+            # Yang tidak butuh DNS tetap ditolak: literal metadata, skema,
+            # loopback name, port rusak.
+            for bad in ("http://169.254.169.254/latest/meta-data/",
+                        "file:///etc/passwd",
+                        "http://localhost:8080/x",
+                        "http://fake.invalid:99999/x"):
+                with self.subTest(url=bad):
+                    with self.assertRaises(policy.PolicyError):
+                        policy.check_url(bad, resolve=False)
+
+    def test_ip_literal_tidak_resolve_dan_tetap_divalidasi(self):
+        with mock.patch("socket.getaddrinfo",
+                        side_effect=AssertionError("resolver tidak boleh dipanggil")):
+            self.assertEqual(policy.resolve_pinned("93.184.216.34", 80),
+                             "93.184.216.34")
+            with self.assertRaises(policy.PolicyError):
+                policy.resolve_pinned("169.254.169.254", 80, allow_private=True)
+
+
+class TestPolicyTidakDiRetry(unittest.TestCase):
+    """Blokir kebijakan bukan kegagalan jaringan: sekali coba, tanpa sleep.
+
+    Regresi yang dikunci: IP literal privat hanya ditolak di lapisan pin
+    (`resolve_pinned`), bukan di `check_url(resolve=False)`. Penolakan itu
+    sampai ke `request()` sebagai `Response(status=0, error='PolicyError: ...')`
+    dan dulu dianggap "koneksi putus", sehingga di-retry 2x dengan sleep
+    2s+4s — satu URL terblokir berubah dari ~0s menjadi ~6s.
+    """
+
+    def test_penolakan_kebijakan_tidak_di_retry(self):
+        t = Transport(delay=0.0)  # retries default (2)
+        self.assertGreaterEqual(t.retries, 1, "prasyarat: retry memang aktif")
+        blocked = Response(url="http://93.184.216.34/x.php", status=0,
+                           error="PolicyError: alamat 93.184.216.34 diblokir")
+        with mock.patch.object(Transport, "_single", return_value=blocked) as single, \
+                mock.patch("lib.transport.time.sleep") as sleep:
+            resp = t.request("GET", "http://93.184.216.34/x.php")
+        self.assertEqual(single.call_count, 1,
+                         "penolakan kebijakan di-retry (harus tepat 1 percobaan)")
+        self.assertFalse(sleep.called,
+                         f"time.sleep dipanggil untuk penolakan kebijakan: {sleep.call_args_list}")
+        self.assertEqual(resp.status, 0)
+        self.assertTrue(resp.error.startswith("PolicyError"))
+
+    def test_resolve_error_juga_tidak_di_retry(self):
+        """DNS gagal = keputusan tetap, bukan gangguan sementara."""
+        t = Transport(delay=0.0)
+        err = Response(url="http://nx.invalid/x.php", status=0,
+                       error="ResolveError: tidak bisa resolve 'nx.invalid'")
+        with mock.patch.object(Transport, "_single", return_value=err) as single, \
+                mock.patch("lib.transport.time.sleep") as sleep:
+            t.request("GET", "http://nx.invalid/x.php")
+        self.assertEqual(single.call_count, 1)
+        self.assertFalse(sleep.called)
+
+    def test_literal_privat_ditolak_walau_resolve_false(self):
+        """`resolve=False` melewati DNS, BUKAN validasi IP literal."""
+        for url in ("http://127.0.0.1:9/x.php", "http://10.0.0.5/x.php"):
+            with self.subTest(url=url):
+                with self.assertRaises(policy.PolicyError) as ctx:
+                    policy.check_url(url, resolve=False)
+                self.assertIn("SSRF", str(ctx.exception))
+        # Flag lab tetap membuka alamat privat literal.
+        for url in ("http://127.0.0.1:9/x.php", "http://10.0.0.5/x.php"):
+            with self.subTest(url=url, allow_private=True):
+                policy.check_url(url, allow_private=True, resolve=False)
+        # Metadata tetap ditolak walau allow_private=True.
+        with self.assertRaises(policy.PolicyError):
+            policy.check_url("http://169.254.169.254/latest/meta-data/",
+                             allow_private=True, resolve=False)
 
 
 if __name__ == "__main__":

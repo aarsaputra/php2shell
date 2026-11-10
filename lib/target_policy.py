@@ -31,10 +31,17 @@ yang sah. Tidak ada flag mana pun yang membuka jalur ini.
 Batas yang jujur
 ----------------
 `check_url()` me-resolve nama lalu memeriksa SEMUA alamat hasil resolusi
-(mencegah trik `127.0.0.1.nip.io` / DNS multi-A-record). Namun resolusi
-dilakukan dua kali (di sini dan di library HTTP), jadi DNS-rebinding aktif
-masih mungkin. Menutup itu sepenuhnya butuh pinning IP di layer koneksi —
-di luar cakupan modul ini dan dicatat sebagai keterbatasan yang diketahui.
+(mencegah trik `127.0.0.1.nip.io` / DNS multi-A-record). Validasasi itu saja
+TIDAK cukup: kalau lapisan koneksi me-resolve sendiri, DNS bisa berubah di
+antara dua resolusi (DNS rebinding) dan koneksi mendarat di alamat yang belum
+pernah diperiksa.
+
+Jawaban modul ini: `resolve_pinned()` — SATU panggilan `getaddrinfo`, validasi
+metadata (selalu) + privat (kecuali `allow_private`), lalu mengembalikan satu
+IP yang sudah lolos. Pemanggil WAJIB menyambung ke IP itu, bukan me-resolve
+ulang. Lapisan koneksi (`lib/transport.py` urllib + curl_cffi, dan
+`lib/chain.py Target._connect()`) memakai fungsi ini; `docs/AUDIT_TRANSPORT.md`
+mencatat jalur mana yang tertutup dan residual yang masih terbuka.
 """
 
 from __future__ import annotations
@@ -46,11 +53,15 @@ import urllib.parse
 
 __all__ = [
     "PolicyError",
+    "ResolveError",
     "check_url",
+    "is_ip_literal",
     "is_private_address",
     "redact_url",
     "redact_text",
     "resolve_and_check",
+    "resolve_pinned",
+    "resolve_pinned_candidates",
     "SENSITIVE_PARAMS",
 ]
 
@@ -108,6 +119,18 @@ class PolicyError(ValueError):
     """
 
 
+class ResolveError(OSError):
+    """Nama tidak bisa di-resolve (DNS gagal) — kegagalan jaringan, bukan blokir.
+
+    Turunan `OSError` dengan sengaja: pemanggil yang sudah memperlakukan
+    `OSError` sebagai "target tak terjangkau / retry" (mis. `chain._connect()`)
+    tidak perlu tahu apa pun tentang kebijakan, sementara pesannya tetap
+    menyebut bahwa validasi IP tidak bisa dilakukan. `resolve_pinned()` TIDAK
+    pernah mengembalikan None: pemanggil harus tahu bedanya "tidak ada IP
+    yang boleh" (PolicyError) vs "tidak ada IP sama sekali" (ResolveError).
+    """
+
+
 def _parse_ip(value: object) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     """Parse IP literal secara toleran; None bila bukan IP.
 
@@ -128,6 +151,11 @@ def _parse_ip(value: object) -> ipaddress.IPv4Address | ipaddress.IPv6Address | 
     if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
         return addr.ipv4_mapped  # ::ffff:127.0.0.1 == 127.0.0.1
     return addr
+
+
+def is_ip_literal(host: object) -> bool:
+    """True bila `host` sudah berupa alamat IP (tidak butuh DNS/pin)."""
+    return _parse_ip(host) is not None
 
 
 def is_private_address(ip: object) -> bool:
@@ -245,7 +273,128 @@ def _unique(values) -> list[str]:
     return seen
 
 
-def check_url(url: str, allow_private: bool = False) -> None:
+def _normalize_host(host: object) -> str:
+    """Host dari `urlsplit().hostname` / input operator -> bentuk tanpa bracket."""
+    name = str(host or "").strip()
+    if name.startswith("[") and name.endswith("]"):
+        name = name[1:-1]
+    if not name:
+        raise PolicyError("URL tanpa host")
+    return name
+
+
+def _check_one(ip: str, host: str, allow_private: bool) -> None:
+    """Validasi SATU alamat hasil resolusi: metadata selalu, privat kondisional."""
+    if _is_metadata_address(ip):
+        raise _metadata_error(f"{host} (resolusi DNS)", ip)
+    if not allow_private and is_private_address(ip):
+        raise PolicyError(
+            f"{host} me-resolve ke alamat terlarang {ip} — diblokir untuk "
+            f"mencegah SSRF; {_hint()}"
+        )
+
+
+def _prefer_ipv4_new_first(ips: list[str]) -> list[str]:
+    """Urutkan IPv4 dulu (lebih banyak target punya A record), urutan asli stabil."""
+    v4: list[str] = []
+    rest: list[str] = []
+    for ip in ips:
+        addr = _parse_ip(ip)
+        (v4 if addr is not None and addr.version == 4 else rest).append(ip)
+    return v4 + rest
+
+
+def resolve_pinned_candidates(
+    host: str, port: int | None = None, allow_private: bool = False
+) -> list[str]:
+    """Resolve `host` SEKALI dan kembalikan SEMUA IP yang lolos kebijakan.
+
+    Lihat `resolve_pinned()`: semua jaminan pin (satu resolusi, validasi ketat,
+    tidak ada resolve ulang di lapisan koneksi) berlaku untuk fungsi ini juga.
+    Hanya saja hasilnya daftar, sehingga pemanggil bisa mencoba IP berikutnya
+    bila IP pertama tidak bisa disambungi — tanpa pernah me-resolve ulang nama.
+
+    Urutan: IPv4 lebih dulu (urutan resolver dipertahankan di dalam kelompok).
+    Metadata/alamat privat di daftar DITOLAK SEBAGAI SATU KESATUAN: satu A
+    record jahat di antara yang publik membatalkan seluruh nama (fail closed),
+    karena tidak ada cara membedakan mana jawaban DNS "yang dimaksud" target.
+
+    IP literal: divalidasi lalu dikembalikan sebagai list satu elemen.
+    DNS gagal -> `ResolveError` (OSError), bukan PolicyError dan bukan None.
+    """
+    name = _normalize_host(host)
+
+    literal = _parse_ip(name)
+    if literal is not None:
+        _check_one(str(literal), f"alamat {name}", allow_private)
+        return [str(literal)]
+
+    try:
+        infos = socket.getaddrinfo(
+            name,
+            port,
+            family=socket.AF_UNSPEC,
+            type=socket.SOCK_STREAM,
+            proto=socket.IPPROTO_TCP,
+        )
+    except OSError as exc:
+        raise ResolveError(
+            f"tidak bisa resolve {name!r} untuk memvalidasi tujuan request "
+            f"({exc}) — tanpa IP hasil resolusi tidak ada yang bisa dipin, "
+            f"jadi request tidak dikirim"
+        ) from exc
+
+    # Dedupe: getaddrinfo mengembalikan satu entri per (family, socktype, proto)
+    # sehingga IP yang sama bisa muncul beberapa kali.
+    ips = _unique(info[4][0] for info in infos)
+    if not ips:
+        raise ResolveError(
+            f"tidak bisa resolve {name!r} untuk memvalidasi tujuan request "
+            f"(resolver tidak mengembalikan satu alamat pun) — request tidak dikirim"
+        )
+    # Semua alamat diperiksa walau pemanggil hanya memakai yang pertama:
+    # satu jawaban DNS berisi metadata = nama itu jahat, titik.
+    for ip in ips:
+        _check_one(ip, name, allow_private)
+    return _prefer_ipv4_new_first(ips)
+
+
+def resolve_pinned(
+    host: str, port: int | None = None, allow_private: bool = False
+) -> str:
+    """Resolve `host` SEKALI, validasi, kembalikan SATU IP yang wajib dituju.
+
+    Kontrak untuk pemanggil (lapisan koneksi)
+    -----------------------------------------
+    Pemanggil WAJIB menyambung ke IP hasil fungsi ini dan TIDAK BOLEH
+    me-resolve ulang nama host di lapisan mana pun (socket, library HTTP,
+    resolver internal TLS, dsb.). Alasannya DNS rebinding: kalau `check_url()`
+    memvalidasi IP A lalu lapisan koneksi me-resolve sendiri dan mendapat IP B,
+    validasi tadi tidak menjaga apa pun. Jadi: satu `getaddrinfo`, satu
+    keputusan, satu IP.
+
+    Endpoint metadata cloud (`METADATA_ADDRESSES`) TIDAK PERNAH diloloskan —
+    bukan lewat `allow_private=True`, bukan lewat A record mana pun. Alamat
+    privat/loopback/link-local/reserved/CGNAT ditolak kecuali
+    `allow_private=True` (flag lab `--allow-private-target`).
+
+    Error
+    -----
+    * `PolicyError`   — ada IP hasil resolusi tetapi dilarang kebijakan
+                        (termasuk kasus 1 A record jahat di antara yang publik).
+    * `ResolveError`  — DNS gagal. TIDAK mengembalikan None: pemanggil tidak
+                        perlu menebak, dan "tak bisa divalidasi" tidak boleh
+                        diam-diam turun ke resolve sendiri di lapisan koneksi.
+
+    IP literal: divalidasi lalu dikembalikan apa adanya (tanpa DNS).
+
+    Bila IP pertama tidak bisa disambungi, pemanggil boleh mencoba kandidat
+    lain dari `resolve_pinned_candidates()` — tetap tanpa resolusi baru.
+    """
+    return resolve_pinned_candidates(host, port, allow_private)[0]
+
+
+def check_url(url: str, allow_private: bool = False, resolve: bool = True) -> None:
     """Validasi URL SEBELUM request (dan sebelum setiap hop redirect).
 
     Melempar PolicyError (ValueError) dengan pesan yang menyebut apa yang
@@ -255,6 +404,19 @@ def check_url(url: str, allow_private: bool = False) -> None:
     `allow_private=True` hanya melonggarkan target lab (loopback/RFC1918/
     link-local). Endpoint metadata cloud tetap ditolak tanpa syarat, termasuk
     hostname yang me-resolve ke sana.
+
+    `resolve=False` untuk pemanggil yang AKAN menyambung lewat
+    `resolve_pinned()` (transport): pemeriksaan sintaks/kebijakan tetap jalan,
+    tetapi resolusi DNS ditunda ke pin itu. Tanpa ini nama di-resolve dua kali
+    (cek di sini + sambung di sana) dan dua jawaban DNS bisa berbeda. Aman
+    karena `resolve_pinned()` memvalidasi SEMUA IP hasil resolusi yang benar-
+    benar dipakai.
+
+    Penting: `resolve=False` hanya melewati RESOLUSI DNS, BUKAN validasi IP
+    literal. Alamat privat/loopback/link-local/reserved yang ditulis langsung
+    di URL (`http://127.0.0.1/`, `http://10.0.0.5/`) tetap ditolak di sini —
+    kalau tidak, satu-satunya penolakan terjadi jauh di lapisan koneksi dan
+    pemanggil melihatnya sebagai kegagalan jaringan, bukan blokir kebijakan.
     """
     text = str(url or "").strip()
     if not text:
@@ -293,17 +455,29 @@ def check_url(url: str, allow_private: bool = False) -> None:
     if _is_metadata_address(host) or _is_metadata_address(lhost):
         raise _metadata_error(f"host {host!r}", str(_parse_ip(host)))
 
+    # IP LITERAL privat tidak butuh DNS: penolakannya tidak bergantung pada
+    # `resolve`. Pesan dan syaratnya sama persis dengan jalur
+    # `resolve_and_check()` supaya pemanggil tidak perlu membedakan asal blokir.
+    literal = _parse_ip(host)
+    if literal is not None and not allow_private and is_private_address(literal):
+        raise PolicyError(
+            f"alamat {literal} privat/loopback/link-local/reserved — "
+            f"diblokir untuk mencegah SSRF; {_hint()}"
+        )
+
     if allow_private:
         # Tetap resolve: hostname yang menunjuk ke metadata harus tertangkap
         # walau `allow_private=True`. Kegagalan DNS tetap bukan blokir.
-        resolve_and_check(host, allow_private=True)
+        if resolve:
+            resolve_and_check(host, allow_private=True)
         return
 
     if lhost in _LOOPBACK_NAMES or lhost.endswith(".localhost"):
         raise PolicyError(
             f"host {host!r} adalah loopback — diblokir untuk mencegah SSRF; {_hint()}"
         )
-    resolve_and_check(host, allow_private=False)
+    if resolve:
+        resolve_and_check(host, allow_private=False)
 
 
 def _is_sensitive(name: str) -> bool:

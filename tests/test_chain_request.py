@@ -174,6 +174,11 @@ class _CtxRecorder:
 
     def __enter__(self):
         self._patches = [
+            # `_connect()` kini me-resolve SEKALI (pin anti DNS-rebinding);
+            # tanpa mock ini tes akan bergantung pada DNS nyata.
+            mock.patch.object(
+                chain.socket, "getaddrinfo",
+                lambda *a, **kw: [(2, 1, 6, "", ("93.184.216.34", 443))]),
             mock.patch.object(chain.socket, "create_connection",
                               lambda *a, **kw: FakeSock()),
             mock.patch.object(chain.ssl, "create_default_context", self._create),
@@ -431,6 +436,58 @@ class TestMemprobeSafeCeiling(unittest.TestCase):
                                    memprobe.huge_mb_for(128 * 1024 ** 2))
         self.assertNotIn("melebihi batas aman", normal)
         self.assertIn("terbaca dari target", normal)
+
+
+class TestDnsRebindingChain(unittest.TestCase):
+    """`Target._connect()` mem-pin IP hasil validasi, bukan hostname.
+
+    Sebelum ini `socket.create_connection((self.host, self.port))` me-resolve
+    ulang nama di dalam socket, jadi DNS bisa mengembalikan alamat lain di
+    antara validasi dan koneksi. Sekarang: satu resolusi, lalu IP itu yang
+    dipakai; `Host:` dan SNI tetap hostname asli.
+    """
+
+    def test_connect_memakai_ip_pin_bukan_hostname(self):
+        calls = []
+        fake = [(2, 1, 6, "", ("93.184.216.34", 8080))]
+        sock = mock.Mock()
+
+        def fake_create_connection(address, *args, **kwargs):
+            calls.append(address)
+            return sock
+
+        def fake_getaddrinfo(host, port=None, *args, **kwargs):
+            return fake
+
+        with mock.patch.object(chain.socket, "create_connection",
+                               side_effect=fake_create_connection), \
+                mock.patch.object(chain.socket, "getaddrinfo",
+                                  side_effect=fake_getaddrinfo) as gad:
+            t = chain.Target("http://fake.invalid:8080/x", verbose=False)
+            got = t._connect()
+
+        self.assertIs(got, sock)
+        self.assertTrue(calls, "tidak ada percobaan koneksi")
+        self.assertEqual(calls[0], ("93.184.216.34", 8080),
+                         f"create_connection menerima {calls[0]}")
+        self.assertEqual(gad.call_count, 1,
+                         f"DNS di-resolve {gad.call_count}x (harus 1)")
+        # Host header & SNI tidak berubah: masih hostname, bukan IP.
+        self.assertEqual(t.host, "fake.invalid")
+        self.assertEqual(t.host_header, "fake.invalid:8080")
+
+    def test_connect_metadata_ditolak_tanpa_menyambung(self):
+        """Jawaban DNS ke IMDS = PolicyError, bukan koneksi ke sana."""
+        fake = [(2, 1, 6, "", ("169.254.169.254", 80))]
+        with mock.patch.object(chain.socket, "create_connection") as conn, \
+                mock.patch.object(chain.socket, "getaddrinfo",
+                                  return_value=fake):
+            t = chain.Target("http://metadata.internal/x", verbose=False)
+            with self.assertRaises(chain._policy.PolicyError) as ctx:
+                t._connect()
+        conn.assert_not_called()
+        self.assertIn("metadata", str(ctx.exception).lower())
+        self.assertIn("SSRF", str(ctx.exception))
 
 
 if __name__ == "__main__":

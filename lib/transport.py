@@ -34,9 +34,13 @@ Pagar keamanan (audit hardening)
 
 from __future__ import annotations
 
+import errno
+import functools
+import http.client
 import json
 import os
 import random
+import socket
 import ssl
 import stat
 import time
@@ -166,6 +170,101 @@ def _have_curl_cffi() -> bool:
 HAVE_CURL_CFFI = _have_curl_cffi()
 
 
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """`HTTPConnection` yang menyambung ke IP hasil validasi, bukan DNS baru.
+
+    urllib memanggil `http_class(host, timeout=..., **args)` lalu `connect()`
+    akan me-resolve `self.host` lagi — celah DNS rebinding: nama divalidasi
+    sebagai IP A, lalu disambungi sebagai IP B. Di sini `connect()` memakai
+    IP yang sudah divalidasi sedangkan `self.host` (dan header `Host:` yang
+    dibangun urllib dari `req.host`) tetap hostname asli, jadi virtual host,
+    SNI, dan cookie tetap benar.
+    """
+
+    # Diisi lewat `functools.partial(_PinnedHTTPConnection, pinned_ip=ip)`.
+    pinned_ip: str | None = None
+
+    def __init__(self, *args, pinned_ip: str | None = None, **kwargs):
+        self.pinned_ip = pinned_ip
+        super().__init__(*args, **kwargs)
+
+    def connect(self) -> None:
+        # Tidak ada proxy/tunnel di jalur tool ini (`Transport` tidak menyetel
+        # proxy untuk urllib), jadi satu-satunya tujuan TCP adalah pin itu.
+        self.sock = self._create_connection(
+            (self.pinned_ip, self.port), self.timeout, self.source_address
+        )
+        try:
+            self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError as exc:
+            if exc.errno != errno.ENOPROTOOPT:
+                raise
+        if self._tunnel_host:
+            self._tunnel()
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """Varian TLS: sambung ke IP pin, handshake tetap memakai hostname asli.
+
+    `server_hostname=self.host` WAJIB: sertifikat dicocokkan dengan nama di
+    URL, bukan dengan IP (kalau tidak, verifikasi TLS akan gagal untuk setiap
+    situs yang sertifikatnya tidak memuat IP, dan memaksa
+    `check_hostname=False` adalah regresi keamanan).
+    """
+
+    pinned_ip: str | None = None
+
+    def __init__(self, *args, pinned_ip: str | None = None, **kwargs):
+        self.pinned_ip = pinned_ip
+        super().__init__(*args, **kwargs)
+
+    def connect(self) -> None:
+        self.sock = self._create_connection(
+            (self.pinned_ip, self.port), self.timeout, self.source_address
+        )
+        try:
+            self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError as exc:
+            if exc.errno != errno.ENOPROTOOPT:
+                raise
+        if self._tunnel_host:
+            self._tunnel()
+        server_hostname = self._tunnel_host or self.host
+        # `HTTPSConnection.__init__` menyimpan konteks di `_context` (atribut
+        # privat stdlib, tidak dikenali type checker) — akses lewat getattr.
+        context = getattr(self, "_context", None) or ssl._create_default_https_context()
+        self.sock = context.wrap_socket(self.sock, server_hostname=server_hostname)
+
+
+class _PinnedHTTPHandler(urllib.request.HTTPHandler):
+    """Handler yang menyerahkan kelas koneksi ber-pin ke `do_open`."""
+
+    def __init__(self, pinned_ip: str, **kwargs):
+        self._pinned_ip = pinned_ip
+        super().__init__(**kwargs)
+
+    def http_open(self, req):
+        return self.do_open(
+            functools.partial(_PinnedHTTPConnection, pinned_ip=self._pinned_ip),
+            req,
+        )
+
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    """Sama, untuk https: konteks TLS tetap diteruskan ke `do_open`."""
+
+    def __init__(self, pinned_ip: str, context=None, **kwargs):
+        self._pinned_ip = pinned_ip
+        super().__init__(context=context, **kwargs)
+
+    def https_open(self, req):
+        return self.do_open(
+            functools.partial(_PinnedHTTPSConnection, pinned_ip=self._pinned_ip),
+            req,
+            context=self._context,
+        )
+
+
 class PolicyRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Handler redirect urllib yang menolak tujuan terlarang.
 
@@ -181,15 +280,21 @@ class PolicyRedirectHandler(urllib.request.HTTPRedirectHandler):
     memvalidasi.
     """
 
-    def __init__(self, allow_private: bool = False, follow: bool = True) -> None:
+    def __init__(self, allow_private: bool = False, follow: bool = True,
+                 resolve: bool = True) -> None:
         super().__init__()
         self.allow_private = allow_private
         self.follow = follow
+        # `resolve=False` dipakai jalur ber-pin (`_single`): pemeriksaan URL
+        # tetap dilakukan, tetapi resolusi DNS ditunda ke `resolve_pinned()`
+        # supaya hanya ada satu jawaban DNS per hop (anti DNS rebinding).
+        self.resolve = resolve
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         # Diperiksa SEBELUM apa pun dikirim: ini satu-satunya tempat di jalur
         # urllib di mana tujuan redirect masih bisa dihentikan.
-        policy.check_url(newurl, allow_private=self.allow_private)
+        policy.check_url(newurl, allow_private=self.allow_private,
+                         resolve=self.resolve)
         if not self.follow:
             return None  # biarkan jadi HTTPError -> pemanggil baca status 3xx
         return super().redirect_request(req, fp, code, msg, headers, newurl)
@@ -444,7 +549,9 @@ class Transport:
         # paket keluar sama sekali, dan penolakan itu sendiri diaudit supaya
         # operator bisa melihat "target diblokir", bukan "target mati".
         try:
-            policy.check_url(url, allow_private=self.allow_private)
+            # `resolve=False`: `_single()` memakai `resolve_pinned()` — satu
+            # resolusi saja per request (lihat docs/AUDIT_TRANSPORT.md §5).
+            policy.check_url(url, allow_private=self.allow_private, resolve=False)
         except ValueError as exc:
             resp = Response(url=url, status=0,
                             error=f"{type(exc).__name__}: {exc}")
@@ -491,6 +598,13 @@ class Transport:
                 "bytes": len(data) if data else 0,
             })
             last = resp
+            # Blokir kebijakan (SSRF/metadata) dan DNS gagal BUKAN kegagalan
+            # jaringan sementara: mengulanginya tidak akan mengubah keputusan,
+            # hanya menambah sleep 2s+4s+8s per request. Status 0 membuatnya
+            # terlihat seperti "koneksi putus" di bawah, jadi dikembalikan
+            # sekarang (fail closed, sekali coba).
+            if resp.error.startswith(("PolicyError", "ResolveError")):
+                return resp
             # 5xx / koneksi putus = layak retry. 4xx = jawaban final, jangan ulang.
             if resp.status and resp.status < 500:
                 return resp
@@ -519,7 +633,8 @@ class Transport:
         resp = Response(url=current, status=0, error="tidak ada request")
         for hop in range(self.max_redirects + 1):
             try:
-                policy.check_url(current, allow_private=self.allow_private)
+                policy.check_url(current, allow_private=self.allow_private,
+                                 resolve=False)
             except ValueError as exc:
                 return self._blocked(current, exc, hop)
             resp = self._single(method_now, current, data_now, headers)
@@ -530,7 +645,8 @@ class Transport:
                 return resp
             nxt = urllib.parse.urljoin(resp.url or current, location.strip())
             try:
-                policy.check_url(nxt, allow_private=self.allow_private)
+                policy.check_url(nxt, allow_private=self.allow_private,
+                                 resolve=False)
             except ValueError as exc:
                 self._audit({
                     "profile": self.profile_name,
@@ -577,6 +693,27 @@ class Transport:
             error=f"{type(exc).__name__}{where}: {exc}",
         )
 
+    def _pin(self, url: str) -> tuple[str, int, str]:
+        """Host/port/IP untuk SATU request — resolusi pertama dan satu-satunya.
+
+        Dipanggil sekali per `_single` (satu hop). Hasilnya dipakai untuk
+        menyambung, jadi tidak ada resolusi kedua yang bisa dibelokkan DNS.
+        """
+        parts = urllib.parse.urlsplit(url)
+        scheme = (parts.scheme or "").lower()
+        host = parts.hostname or ""
+        if not host:
+            raise policy.PolicyError(f"URL tanpa host: {policy.redact_url(url)!r}")
+        default_port = 443 if scheme == "https" else 80
+        try:
+            port = parts.port or default_port
+        except ValueError as exc:
+            raise policy.PolicyError(
+                f"port tidak valid pada {policy.redact_url(url)!r} ({exc})"
+            ) from exc
+        ip = policy.resolve_pinned(host, port, allow_private=self.allow_private)
+        return host, port, ip
+
     def _single(
         self,
         method: str,
@@ -584,26 +721,58 @@ class Transport:
         data: bytes | str | None,
         headers: dict[str, str] | None,
     ) -> Response:
-        """SATU request tanpa mengikuti redirect. Tujuan sudah divalidasi."""
+        """SATU request tanpa mengikuti redirect. Tujuan sudah divalidasi.
+
+        DNS rebinding: hostname di-resolve TEPAT SEKALI di sini lewat
+        `policy.resolve_pinned()`, lalu koneksi dipin ke IP itu (urllib:
+        kelas koneksi ber-pin; curl_cffi: `CURLOPT_RESOLVE`). Nama tidak
+        pernah di-resolve ulang oleh library, jadi jawaban DNS kedua tidak
+        bisa membelokkan paket ke alamat yang belum divalidasi.
+        """
         hdrs = self._headers(headers)
+        try:
+            host, port, ip = self._pin(url)
+        except (policy.PolicyError, policy.ResolveError) as exc:
+            # Fail closed: tanpa IP tervalidasi tidak ada paket yang dikirim.
+            return Response(url=url, status=0,
+                            error=f"{type(exc).__name__}: {exc}")
+
+        scheme = (urllib.parse.urlsplit(url).scheme or "").lower()
+        # IP literal tidak butuh pin: tidak ada nama yang bisa dibelokkan.
+        is_literal = policy.is_ip_literal(host)
+
         if HAVE_CURL_CFFI:
             from curl_cffi import requests as creq
 
             if self._session is None:
                 self._session = creq.Session(impersonate=self.profile["impersonate"])
             proxies = {"http": self.proxy, "https": self.proxy} if self.proxy else None
-            r = self._session.request(
-                method,
-                url,
-                data=data,
-                headers=hdrs,
-                timeout=self.timeout,
-                proxies=proxies,
-                # Redirect ditangani `_fetch` supaya tiap Location bisa
-                # divalidasi kebijakan. Verifikasi TLS mengikuti operator.
-                allow_redirects=False,
-                verify=self.verify_tls,
-            )
+            if not is_literal and not self.proxy:
+                # `CURLOPT_RESOLVE` = tabel host:port -> IP untuk handle ini
+                # saja; header `Host:`/SNI tetap hostname asli.
+                from curl_cffi.const import CurlOpt  # alias `curl_cffi.CurlOpt`
+
+                addr = f"[{ip}]" if ":" in ip else ip
+                self._session.curl_options = {
+                    CurlOpt.RESOLVE: [f"{host}:{port}:{addr}"]
+                }
+            try:
+                r = self._session.request(
+                    method,
+                    url,
+                    data=data,
+                    headers=hdrs,
+                    timeout=self.timeout,
+                    proxies=proxies,
+                    # Redirect ditangani `_fetch` supaya tiap Location bisa
+                    # divalidasi kebijakan. Verifikasi TLS mengikuti operator.
+                    allow_redirects=False,
+                    verify=self.verify_tls,
+                )
+            finally:
+                # Pin tidak boleh bocor ke request berikutnya (host lain).
+                if self._session is not None:
+                    self._session.curl_options = {}
             return Response(
                 url=str(r.url),
                 status=r.status_code,
@@ -612,14 +781,29 @@ class Transport:
             )
 
         req = urllib.request.Request(url, data=data, headers=hdrs, method=method)
-        scheme = (urllib.parse.urlsplit(url).scheme or "").lower()
         ctx = self._ssl_context() if scheme == "https" else None
-        opener = urllib.request.build_opener(
-            # follow=False: 3xx dikembalikan apa adanya ke `_fetch`, yang
-            # memvalidasi tiap Location lalu memutuskan lompat sendiri.
-            PolicyRedirectHandler(allow_private=self.allow_private, follow=False),
-            urllib.request.HTTPSHandler(context=ctx),
-        )
+        if scheme == "https":
+            pinned = _PinnedHTTPSHandler(pinned_ip=ip, context=ctx)
+            opener = urllib.request.build_opener(
+                # follow=False: 3xx dikembalikan apa adanya ke `_fetch`, yang
+                # memvalidasi tiap Location lalu memutuskan lompat sendiri.
+                PolicyRedirectHandler(allow_private=self.allow_private,
+                                      follow=False, resolve=False),
+                # ProxyHandler({}) : pin = "sambung LANGSUNG ke IP ini".
+                # Proxy dari environment berarti koneksi TCP pergi ke proxy
+                # (bukan ke pin), dan validasi IP tadi jadi hiasan. Dict kosong
+                # eksplisit mematikan proxy; `ProxyHandler()` tanpa argumen
+                # justru MEMBACA environment.
+                urllib.request.ProxyHandler({}),
+                pinned,
+            )
+        else:
+            opener = urllib.request.build_opener(
+                PolicyRedirectHandler(allow_private=self.allow_private,
+                                      follow=False, resolve=False),
+                urllib.request.ProxyHandler({}),
+                _PinnedHTTPHandler(pinned_ip=ip),
+            )
         try:
             with opener.open(req, timeout=self.timeout) as r:
                 raw = b"" if method == "HEAD" else r.read(2_000_000)

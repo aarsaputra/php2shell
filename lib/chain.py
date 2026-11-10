@@ -65,6 +65,8 @@ import time
 import urllib.parse
 from collections import Counter
 
+from . import target_policy as _policy
+
 # --------------------------------------------------------------- konstanta --
 
 MAX_CMD = 14  # carrier zend_string 167 byte -> maksimum perintah
@@ -195,7 +197,8 @@ class Target:
     """
 
     def __init__(self, url: str, timeout: float = 30.0, verbose: bool = True,
-                 verify_tls: bool = True, deadline: float | None = None):
+                 verify_tls: bool = True, deadline: float | None = None,
+                 allow_private: bool = True):
         u = urllib.parse.urlsplit(url)
         if u.scheme not in ("http", "https"):
             raise ValueError("URL harus http:// atau https://")
@@ -217,6 +220,13 @@ class Target:
         self.verify_tls = verify_tls
         # None = tanpa batas total (kompatibel dengan pemanggil lama).
         self.deadline = deadline
+        # Rantai (`Chain`) menembak target yang DIKETIK operator (lab lokal
+        # 127.0.0.1/10.x lebih sering daripada host publik), jadi alamat privat
+        # diizinkan di sini seperti sebelumnya — TETAPI endpoint metadata
+        # cloud/IMDS tetap ditolak tanpa syarat oleh `resolve_pinned()`, walau
+        # nilainya True. Yang dikunci di `_connect()` adalah PIN: satu
+        # resolusi, lalu sambung ke IP hasil validasi itu.
+        self.allow_private = bool(allow_private)
 
     # ---------- deadline ----------
 
@@ -262,6 +272,10 @@ class Target:
 
     def _connect(self):
         last = None
+        # Pin DNS dihitung SEKALI untuk seluruh percobaan: kalau tiap retry
+        # me-resolve lagi, jawaban DNS bisa berubah di tengah retry (persis
+        # celah yang ditutup) dan biaya DNS berlipat 10x.
+        pinned_ip: str | None = None
         for _ in range(10):
             # Tiap percobaan koneksi dibatasi SISA deadline: 10 percobaan ×
             # timeout 90s = 900s adalah cara paling mudah melewati anggaran
@@ -275,7 +289,18 @@ class Target:
                     raise last from exc
                 raise
             try:
-                s = socket.create_connection((self.host, self.port),
+                # DNS rebinding: resolve SEKALI di sini (validasi metadata +
+                # privat ikut dijalankan), lalu sambung ke IP hasilnya. Tanpa
+                # ini `create_connection(self.host, ...)` akan me-resolve ulang
+                # nama dan bisa mendarat di alamat yang belum divalidasi.
+                # `PolicyError` (ValueError) sengaja TIDAK ditangkap di sini:
+                # blokir kebijakan bukan gangguan jaringan yang layak di-retry.
+                # `ResolveError` turunan OSError -> ikut jalur retry biasa.
+                if pinned_ip is None:
+                    pinned_ip = _policy.resolve_pinned(
+                        self.host, self.port, allow_private=self.allow_private
+                    )
+                s = socket.create_connection((pinned_ip, self.port),
                                              timeout=attempt_timeout)
                 if self.https:
                     # Rantai berjalan lewat soket mentah, jadi TLS diatur di sini.

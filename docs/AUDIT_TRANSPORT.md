@@ -88,3 +88,64 @@ Kelas tes baru:
   fisik == jumlah record, tidak ada baris yang diawali `{"ts":"x"`, tiap
   baris `json.loads`-able, byte kontrol tidak masuk file mentah, dan redaksi
   token tetap `***`.
+
+
+## 5. DNS rebinding / IP pinning
+
+Sebelum ini `target_policy.check_url()` me-resolve hostname untuk *validasi*,
+lalu lapisan koneksi me-resolve **lagi** secara independen. Di antara dua
+panggilan itu penyerang bisa mengubah jawaban DNS (TTL 0) sehingga:
+
+1. resolve #1 (validasi) -> `93.184.216.34` (lolos kebijakan)
+2. resolve #2 (koneksi)  -> `169.254.169.254` (IMDS cloud)
+
+Validasi tetap "hijau" sementara paket mendarat di metadata. Celahnya bukan
+pada daftar blokir, melainkan pada **TOCTOU** antara cek dan pakai.
+
+Perbaikannya: satu resolusi, satu keputusan, tiga jalur ditutup.
+
+Konsekuensinya `check_url()` mendapat parameter `resolve=False`: pemanggil yang
+akan menyambung lewat pin tetap menjalankan pemeriksaan sintaks/kebijakan
+(skema, host kosong, port rusak, literal metadata, nama loopback), tetapi
+menunda resolusi DNS ke `resolve_pinned()`. Dengan begitu nama hanya di-resolve
+sekali per hop, bukan dua kali. `policy.check_url(url)` tanpa argumen tetap
+perilaku lama (validasi penuh termasuk resolusi), jadi pemanggil lain tidak
+berubah.
+
+| Jalur | Mekanisme pin |
+|---|---|
+| `urllib` (`lib/transport.py`) | `policy.resolve_pinned()` dipanggil **sekali** di `_single()`. `_PinnedHTTPConnection` / `_PinnedHTTPSConnection` menyambung ke `self.pinned_ip` lewat `_create_connection((pinned_ip, port), ...)`, bukan `(self.host, port)`. `self.host` tetap hostname asli, jadi header `Host:` dan SNI (di luar tunnel) tidak berubah. |
+| `curl_cffi` (`lib/transport.py`) | `session.curl_options = {CurlOpt.RESOLVE: [f"{host}:{port}:{ip}"]}` untuk handle itu saja, lalu **di-reset ke `{}` di `finally`** supaya pin tidak bocor ke request host lain. `CURLOPT_RESOLVE` memetakan nama ke IP tanpa mengubah `Host:`/SNI. Dilewati bila host sudah IP literal atau bila proxy aktif. |
+| Raw socket (`lib/chain.py`, `Target._connect()`) | `resolve_pinned(host, port, allow_private=...)` sekali di luar loop retry (10 percobaan), lalu `socket.create_connection((pinned_ip, port))`. `PolicyError` sengaja tidak ditangkap (blokir bukan gangguan jaringan); `ResolveError(OSError)` ikut jalur retry. |
+
+Kenapa IP hasil validasi yang dipakai, bukan nama: koneksi TCP tidak punya
+konsep nama setelah resolusi. Selama ada pemanggilan resolver kedua di jalur
+koneksi, penyerang DNS selalu punya kesempatan kedua. Pin memindahkan
+keputusan ke satu titik yang sama dengan validasi.
+
+### Residual (jujur)
+
+- **Redirect hop** — tiap `Location` di-resolve dan divalidasi sendiri saat hop
+  itu dijalankan (`_fetch` memanggil `_single` per hop). Itu benar secara
+  kebijakan, tetapi berarti satu request bisa memakai beberapa IP berbeda;
+  tidak ada pin lintas hop, dan itu memang diinginkan.
+- **Proxy** — bila proxy diaktifkan, koneksi TCP berakhir di proxy dan proxy
+  yang me-resolve nama; IP pin tidak berlaku (karena itu pin dilewati di jalur
+  `curl_cffi` saat `self.proxy` ada). Pemilik pin di skenario itu adalah proxy.
+  Jalur `urllib` memakai `ProxyHandler({})` eksplisit: proxy environment
+  dimatikan agar pin tidak jadi hiasan.
+- **Celah sempit** — `_PinnedHTTPSConnection` dengan `_tunnel_host` (proxy
+  HTTPS) tetap memakai `self.host` untuk SNI; di tool ini tunnel tidak
+  disetel, jadi tidak aktif.
+- **Resolver yang berubah antar-hop/antar-retry** pada `chain.py` sengaja
+  dikunci: IP dihitung sekali di luar loop retry.
+- **`getaddrinfo` numerik di `socket.create_connection(ip, ...)`** — setelah
+  pin, stdlib tetap memanggil `getaddrinfo` pada string IP. Itu lookup
+  numerik lokal (`AI_NUMERICHOST`-equivalent), bukan kueri DNS, jadi tidak ada
+  jawaban jaringan yang bisa dibelokkan. Yang penting: tidak ada nama host
+  yang sampai ke resolver setelah validasi.
+
+Bukti: `tests/test_transport_security.py::TestDnsRebinding` (urllib satu
+resolusi, SNI asli, metadata/privat, IPv4-first, DNS gagal = `ResolveError`)
+dan `tests/test_chain_request.py::TestDnsRebindingChain` (raw socket pin).
+
