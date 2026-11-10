@@ -319,7 +319,7 @@ Important options:
 | `--retries N` | retries per stage (default 3, heap-fresh via worker rotation) |
 | `--huge-mb N` | force the size of the stage-1 OOM field (default: read from `memory_limit`) |
 | `--force` | force past a NOT-READY preflight (confirmation still required) |
-| `--exploit-timeout N` | total time limit for the chain (default 300s) |
+| `--exploit-timeout N` | total time limit for the chain (default 300s) — a real absolute deadline, see below |
 
 #### Why `--huge-mb` is automatic now
 
@@ -339,11 +339,26 @@ request first, reads the number out of the PHP fatal message
 (`Allowed memory size of N bytes exhausted`), and then sets the field
 slightly above the limit.
 
-What it does **not** do: keep raising the size until it works.
-If the number is unreadable (`display_errors=Off`), it uses the 12 MB default
-and says so. It does not sweep 256 MB at someone's target just to
-guess. If `memory_limit` is above 512 MB, it stops and reports,
+What it does **not** do: keep raising the size until it works, and it does not
+guess. If the number is unreadable (`display_errors=Off`), the automatic
+exploitation **stops before the first payload byte** and tells you why: without
+the limit there is no field size that can be shown large enough to OOM, so any
+12 MB body is a blind shot whose failure would look like "not vulnerable".
+The way out is `--huge-mb <MB>` with a size you validated in the lab.
+`--force` does not skip this gate — it waives administrative preflight
+requirements, not the physical fact of an unknown `memory_limit`.
+If `memory_limit` is above 512 MB, it stops and reports,
 because this chain really will not run there.
+
+#### `--exploit-timeout` is one deadline, not a per-request timeout
+
+`--exploit-timeout` is an **absolute** deadline for the whole run, computed once
+(`start + N`). Every network step asks for its own timeout with
+`Target.op_timeout(prefer)`, which returns `min(prefer, remaining)`; the 16 MB
+`memory_limit` probe, `connect` retries, each 256 KB body slice, every `recv` loop
+and the inter-request pauses all draw from the same budget. When the budget is
+gone the chain raises `DeadlineExceeded` **before** sending another request, and
+`run()` reports `DEADLINE — ...` instead of a misleading `HEAP_LEAK_FAILED`.
 
 #### The target requirements that actually matter
 

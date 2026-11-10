@@ -317,7 +317,7 @@ Opsi penting:
 | `--retries N` | retry per stage (default 3, heap-fresh via rotasi worker) |
 | `--huge-mb N` | paksa ukuran field OOM stage-1 (default: dibaca dari `memory_limit`) |
 | `--force` | paksa lewat preflight TIDAK-READY (tetap konfirmasi) |
-| `--exploit-timeout N` | batas waktu total rantai (default 300s) |
+| `--exploit-timeout N` | batas waktu total rantai (default 300s) — deadline absolut, lihat di bawah |
 
 #### Kenapa `--huge-mb` sekarang otomatis
 
@@ -337,11 +337,28 @@ request probe lebih dulu, membaca angka dari pesan fatal PHP
 (`Allowed memory size of N bytes exhausted`), lalu menyetel field-nya
 sedikit di atas limit.
 
-Yang **tidak** dilakukan tool ini: menaikkan ukuran sampai berhasil.
-Kalau angkanya tidak terbaca (`display_errors=Off`), ia memakai default 12 MB
-dan mengatakan demikian — tidak menyapu 256 MB ke target orang untuk
-menebak. Kalau `memory_limit` di atas 512 MB, ia berhenti dan melapor,
+Yang **tidak** dilakukan tool ini: menaikkan ukuran sampai berhasil, dan ia
+tidak menebak. Kalau angkanya tidak terbaca (`display_errors=Off`),
+eksploitasi otomatis **berhenti sebelum satu byte payload dikirim** dan
+mengatakan sebabnya: tanpa angka limit tidak ada ukuran field yang bisa
+dibuktikan cukup untuk OOM, jadi body 12 MB mana pun cuma tembakan buta yang
+kegagalannya terlihat seperti "target tidak rentan". Jalan keluarnya
+`--huge-mb <MB>` dengan ukuran yang sudah Anda validasi di lab. `--force`
+TIDAK melewati gerbang ini — force membatalkan pra-syarat administratif
+preflight, bukan fakta fisik `memory_limit` yang tidak diketahui.
+Kalau `memory_limit` di atas 512 MB, ia berhenti dan melapor,
 karena rantai ini memang tidak akan jalan di sana.
+
+#### `--exploit-timeout` adalah satu deadline, bukan timeout per-request
+
+`--exploit-timeout` adalah deadline **absolut** untuk seluruh run, dihitung
+sekali (`mulai + N`). Setiap langkah jaringan meminta timeout-nya sendiri lewat
+`Target.op_timeout(prefer)`, yang mengembalikan `min(prefer, sisa)`; probe
+`memory_limit` 16 MB, retry `connect`, tiap potongan body 256 KB, setiap loop
+`recv`, dan jeda antar-request semuanya memakai anggaran yang sama. Saat
+anggaran habis, rantai melempar `DeadlineExceeded` **sebelum** mengirim request
+berikutnya, dan `run()` melapor `DEADLINE — ...` alih-alih `HEAP_LEAK_FAILED`
+yang menyesatkan.
 
 #### Syarat target yang benar-benar menentukan
 
