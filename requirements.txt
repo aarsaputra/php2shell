@@ -1,4 +1,10 @@
 # php2shell runtime dependencies
 # (python3 >= 3.9; venv direkomendasikan — lihat install.sh)
-curl_cffi>=0.7        # TLS/JA3 impersonation (chrome/safari/edge/...) — tanpa ini tool fallback urllib (JAUH lebih mudah terdeteksi)
-bcrypt>=4.0           # hashing password webshell (shell/ generator)
+#
+# PINNED: versi di bawah adalah yang TERPASANG DAN TERUJI di venv proyek
+# (Python 3.14.7). Jangan naikkan tanpa menjalankan ulang test suite.
+# Verifikasi ulang setelah upgrade:
+#   python -c "import curl_cffi,bcrypt;print(curl_cffi.__version__,bcrypt.__version__)"
+#   pip install -r requirements.txt && python -m pytest -q
+curl_cffi==0.16.3     # TLS/JA3 impersonation (chrome/safari/edge/...) — tanpa ini tool fallback urllib (JAUH lebih mudah terdeteksi)
+bcrypt==5.0.0         # hashing password webshell (shell/ generator)

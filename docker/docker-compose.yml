@@ -13,10 +13,18 @@ services:
       - ./apache.conf:/etc/apache2/conf-enabled/zz-php2shell.conf:ro
       - ./www:/var/www/html:ro
       - ../out:/out
-    # The host ./out directory is created by Docker as root; let the Apache
-    # worker (www-data) write the proof file and make it readable here.
+    # /out must be writable by the Apache worker (www-data, uid/gid 33) so it can
+    # drop the proof file. 0770 + group www-data is enough for that and stays
+    # NOT world-writable (no world-write + sticky bit): otherwise any local
+    # user of the host could plant or overwrite artifacts that the operator
+    # then reads as evidence.
+    # `install -d` sets mode + ownership in one shot; the fallback covers images
+    # where install(1) is missing.
     command:
       - /bin/sh
       - -c
-      - chmod 1777 /out 2>/dev/null || true; exec apache2-foreground
+      - >-
+        install -d -m 0770 -o www-data -g www-data /out 2>/dev/null ||
+        (chmod 0770 /out && chgrp www-data /out);
+        exec apache2-foreground
     restart: unless-stopped

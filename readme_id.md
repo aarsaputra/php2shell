@@ -10,7 +10,7 @@
 
 [![PHP](https://img.shields.io/badge/PHP-5.4%20→%208.4.26-777BB4?style=flat-square&logo=php&logoColor=white)](https://www.php.net)
 [![CVSS](https://img.shields.io/badge/CVSS%204.0-9.2%20Critical-cb2431?style=flat-square)](https://www.first.org/cvss/)
-[![Tests](https://img.shields.io/badge/tests-46%2F46-brightgreen?style=flat-square)](#-verification)
+[![Tests](https://img.shields.io/badge/tests-263-brightgreen?style=flat-square)](#-verification)
 [![Platform](https://img.shields.io/badge/platform-Linux-blue?style=flat-square&logo=linux&logoColor=white)](#-the-5-lab-requirements)
 [![License: GPL‑3.0](https://img.shields.io/badge/license-GPL--3.0-informational?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/lab-docker%20one--command-2496ED?style=flat-square&logo=docker&logoColor=white)](#-one-command-lab)
@@ -704,7 +704,8 @@ Fork = satu garis keturunan git. Di sini:
 
 Tidak ada satu pun dari mereka yang bisa jadi "parent" tunggal. Yang kami tulis
 sendiri: CLI 7 mode, engine in-process `lib/chain.py`, auto-proof baca `out/p1`,
-pagar perintah, skor preflight, mode stealth, 81 unit test, installer, lab Docker.
+pagar perintah, skor preflight, mode stealth, suite tes (263 tes, diukur dengan
+`python -m unittest discover -s tests -t .`), installer, lab Docker.
 
 ### Kenapa `--revshell` tidak ada di sini
 
@@ -880,7 +881,8 @@ commands, no shells, no exfil primitives) reflects that scope.
 | Command fence | 16 negative test cases, rejected **before** any network I/O |
 | `--revshell` | blocked at runner level (exit 2), not just parser |
 | Multi-target mode | dedupe, auto-https, JSON/CSV verified live |
-| 81 unit tests | `python -m unittest discover -s tests -t .` → OK |
+| 263 tes | `python -m unittest discover -s tests -t .` → `Ran 263 tests … OK` |
+| 416 test case / 195 subtest | `python -m pytest -q` → `416 passed, 195 subtests passed` (suite sama, cara koleksi pytest berbeda) |
 
 ---
 
@@ -909,7 +911,7 @@ php2shell/
 ├── lab/lab_docker.sh     author-config vulnerable lab, one command
 ├── docker/               php.ini / apache.conf / www / offsets.py
 ├── docs/                 SYARAT_TARGET.md — apa yang menentukan rantai jalan
-├── tests/                81 unit tests
+├── tests/                263 tes (`python -m unittest discover -s tests -t .`)
 └── gambar/               screenshot
 ```
 

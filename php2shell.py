@@ -235,6 +235,43 @@ def _exploit_opts(args) -> dict:
     }
 
 
+HUGE_MB_MAX = 512  # sinkron dengan lib/memprobe.SAFE_CEILING_MB
+
+
+def _huge_mb_arg(text: str) -> int:
+    """Validator argparse `--huge-mb` (temuan audit P1-05).
+
+    Dulu `type=int` menerima apa pun, termasuk `-5`, lalu nilainya baru
+    ditolak oleh `assert ... huge_mb > 0` di lib/exploit_runner.py — hasilnya
+    AssertionError (traceback), bukan penolakan rapi, dan baru SETELAH
+    beberapa request terkirim. Di sini nilai ditolak di parser: exit 2,
+    pesan jelas, sebelum satu request pun keluar.
+
+    Batas atas = plafon aman field `big` (lib/memprobe.SAFE_CEILING_MB).
+    Nilai yang sah (mis. 64) diteruskan APA ADANYA ke runner.
+    """
+    try:
+        val = int(str(text).strip(), 10)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError(
+            f"{text!r} bukan bilangan bulat MB (contoh: --huge-mb 64)")
+    if val <= 0:
+        raise argparse.ArgumentTypeError(
+            f"--huge-mb harus > 0 (diberikan {val}). Ukuran field 'big' "
+            f"dalam MB; 0/negatif tidak punya arti di sisi target.")
+    try:
+        from lib import memprobe as _memprobe
+        ceiling = int(_memprobe.SAFE_CEILING_MB)
+    except Exception:  # noqa: BLE001 — jangan gagalkan parsing karena import
+        ceiling = HUGE_MB_MAX
+    if val > ceiling:
+        raise argparse.ArgumentTypeError(
+            f"--huge-mb {val} melewati plafon aman {ceiling} MB "
+            f"(SAFE_CEILING_MB). Field 'big' sebesar itu tidak pernah "
+            f"dikirim ke target.")
+    return val
+
+
 def _add_exploit_flags(p: argparse.ArgumentParser, single: bool) -> None:
     """Flag mesin rantai internal (lib/chain.py)."""
     g = p.add_argument_group("opsi mesin rantai (lib/chain.py, internal)")
@@ -262,9 +299,9 @@ def _add_exploit_flags(p: argparse.ArgumentParser, single: bool) -> None:
                    help="jangan cari offset otomatis")
     g.add_argument("--exploit-profile", choices=("lab", "bookworm"), default=None,
                    help="profil offset exploit.py (BUKAN sidik jari TLS)")
-    g.add_argument("--huge-mb", type=int, default=None,
-                   help="paksa ukuran field 'big' (MB); default: dibaca otomatis "
-                        "dari memory_limit target")
+    g.add_argument("--huge-mb", type=_huge_mb_arg, default=None, metavar="MB",
+                   help=("paksa ukuran field 'big' (MB, 1-%d); default: dibaca "
+                         "otomatis dari memory_limit target" % HUGE_MB_MAX))
     g.add_argument("--fetch", default=None,
                    help="URL yang di-fetch lewat RCE setelah eksekusi")
     g.add_argument("--retries", type=int, default=None,
@@ -917,13 +954,23 @@ def main(argv: list[str] | None = None) -> int:
 
     # --check-version / mode `version`: tanya GitHub sekali, jangan pernah
     # menggagalkan jalan utama kalau offline (gagal-aman by design).
-    if getattr(args, "check_version", False):
+    # Kontrak flag (temuan audit P2-08): dulu cabang ini memakai
+    # `getattr(args, "check_updates", True)` — dest yang TIDAK PERNAH dibuat
+    # argparse (`--no-check-updates` berdest `no_check_updates`), jadi flag
+    # itu murni hiasan dan `version.check` tetap terpanggil 1x.
+    #   --check-version    -> SELALU cek (permintaan eksplisit operator)
+    #   --no-check-updates -> NOL panggilan jaringan (version.check dilewati)
+    #   default            -> notifikasi ringan cache 1 jam (kecuali `version`)
+    # Bila keduanya diberikan, permintaan eksplisit `--check-version` menang.
+    _no_updates = bool(getattr(args, "no_check_updates", False))
+    _ask_version = bool(getattr(args, "check_version", False))
+    if _ask_version:
         vc = version_mod.check(VERSION, use_cache=True)
         print(f"  {version_mod.format_line(vc)}")
         if vc.update_available:
             print(f"  -> update: git -C {ROOT} pull --ff-only   ({vc.url})")
         print()
-    elif getattr(args, "check_updates", True) and args.mode not in ("version",):
+    elif (not _no_updates) and args.mode not in ("version",):
         # Notifikasi ringan (cache 1 jam): 1 baris bila ada versi baru.
         # Tidak pernah mengeksekusi update — keputusan tetap milik operator.
         try:

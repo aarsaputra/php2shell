@@ -10,7 +10,7 @@
 
 [![PHP](https://img.shields.io/badge/PHP-5.4%20→%208.4.26-777BB4?style=flat-square&logo=php&logoColor=white)](https://www.php.net)
 [![CVSS](https://img.shields.io/badge/CVSS%204.0-9.2%20Critical-cb2431?style=flat-square)](https://www.first.org/cvss/)
-[![Tests](https://img.shields.io/badge/tests-133-brightgreen?style=flat-square)](#-verification)
+[![Tests](https://img.shields.io/badge/tests-263-brightgreen?style=flat-square)](#-verification)
 [![Platform](https://img.shields.io/badge/platform-Linux-blue?style=flat-square&logo=linux&logoColor=white)](#-the-5-lab-requirements)
 [![License: GPL‑3.0](https://img.shields.io/badge/license-GPL--3.0-informational?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/lab-docker%20one--command-2496ED?style=flat-square&logo=docker&logoColor=white)](#-one-command-lab)
@@ -704,7 +704,8 @@ A fork = a single git lineage. Here:
 
 None of them can be the single "parent". What we wrote
 ourselves: the 7-mode CLI, the in-process engine `lib/chain.py`, auto-proof reading of `out/p1`,
-the command fence, the preflight score, stealth mode, 133 unit tests, the installer, the Docker lab.
+the command fence, the preflight score, stealth mode, the test suite (263 tests, measured
+with `python -m unittest discover -s tests -t .`), the installer, the Docker lab.
 
 ### Why `--revshell` is not here
 
@@ -886,7 +887,8 @@ commands, no shells, no exfil primitives) reflects that scope.
 | Command fence | 16 negative test cases, rejected **before** any network I/O |
 | `--revshell` | blocked at runner level (exit 2), not just parser |
 | Multi-target mode | dedupe, auto-https, JSON/CSV verified live |
-| 133 unit tests | `python -m unittest discover -s tests -t .` → OK |
+| 263 tests | `python -m unittest discover -s tests -t .` → `Ran 263 tests … OK` |
+| 416 test cases / 195 subtests | `python -m pytest -q` → `416 passed, 195 subtests passed` (same suite, pytest collection counts differently) |
 
 ---
 
@@ -915,7 +917,7 @@ php2shell/
 ├── lab/lab_docker.sh     author-config vulnerable lab, one command
 ├── docker/               php.ini / apache.conf / www / offsets.py
 ├── docs/                 SYARAT_TARGET.md — what makes the chain work
-├── tests/                133 unit tests
+├── tests/                263 tests (`python -m unittest discover -s tests -t .`)
 └── gambar/               screenshot
 ```
 
