@@ -82,7 +82,19 @@ php2shell --help                    # banner + flags tampil
 python3 -c "import curl_cffi"       # stealth mode aktif
 python3 -c "import bcrypt"          # mode shell siap
 docker info >/dev/null && echo "docker OK"
-python -m unittest discover -s tests -t .   # 46 tests → OK
+python -m unittest discover -s tests -t .   # → Ran 263 tests, OK
 ```
+
+`requirements.txt` sudah di-pin (`==`) ke versi yang teruji, jadi versi yang
+terpasang bisa direproduksi persis. Cara cek cepat bahwa pin-nya masih sehat di
+mesin Anda:
+
+```bash
+pip install -r requirements.txt && python -m pytest -q
+```
+
+Kalau ada yang gagal setelah upgrade, bandingkan versi terpasang dengan pin
+(`python -c "import curl_cffi,bcrypt;print(curl_cffi.__version__,bcrypt.__version__)"`)
+sebelum menyalahkan kode.
 
 Semua [ok] → tool 100% fungsional termasuk lab dan mode exploit.

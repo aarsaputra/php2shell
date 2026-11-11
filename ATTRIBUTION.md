@@ -48,9 +48,23 @@ no NVD record — used as a headline by murrez, not repeated here).
 - The command fence (whitelist, 14-byte cap, chaining rejection, no revshell)
 - Preflight scoring model + the "detection is information, not a gate" policy
 - Stealth layer: JA3 profile rotation, jitter, JSONL request audit
-- Test suite (81 tests), installer, Docker lab, GPL-3.0 wrapper
+- Test suite (263 tests — `python -m unittest discover -s tests -t .` → `Ran 263 tests, OK`), installer, Docker lab, GPL-3.0 wrapper
 
 ## License status (read this)
+
+> **LEGAL REVIEW REQUIRED — belum ada clearance.**
+>
+> `9bie/php2shell-bypass-aslr-exp` publishes **no license file**, so default
+> copyright applies to it ("all rights reserved") — there is no grant we can
+> point at. Our own **GPL-3.0 does not override or extinguish the upstream
+> author's rights** over the portions of `lib/chain.py` that are substantially a
+> port of their `exploit.py`; a downstream license can only cover the code *we*
+> wrote. There are exactly three paths: (1) ask 9bie for permission and record
+> the grant here, (2) replace the port with a **clean-room reimplementation**
+> written only from the published behavioural spec (see the devploit pattern
+> below), or (3) drop the upstream-derived portions from this repo. Until one of
+> those happens, **this repo makes no claim of legal clearance** — this section
+> documents the risk, it does not resolve it, and it is not legal advice.
 
 This repo is released under **GPL-3.0-only** — that covers the code *we* wrote.
 
@@ -146,7 +160,9 @@ Both this repo and the Zer061 source folder were checked for:
 | raw `socket.create_connection` | required — the chain speaks TCP directly so TLS/handshake is not normalised by a library |
 | `--revshell` / reverse-shell payloads | **PRESENT in the reference `exploit.py`** (commit `5fc5669`, v.dir.mir): 3 vectors (bash `/dev/tcp`, python pty, perl socket) written to `out/c`, executed via `sh</out/c`, plus an `nc` listener. **Blocked in this toolkit**: not in argparse, words `bash`/`nc`/`sh` rejected by the runner, no listener implemented. |
 
-All 31 git-tracked files were hashed with `sha256sum`; 46/46 tests pass.
+All 31 git-tracked files were hashed with `sha256sum`; the test suite was green at that
+time (46 tests then — today's count and the command to reproduce it are in the table
+above: `python -m unittest discover -s tests -t .` → `Ran 263 tests, OK`).
 
 **Full forensic scope:** all 384 blobs across all 19 commits were extracted and
 scanned (not just the working tree). No C2 host, no credential theft, no

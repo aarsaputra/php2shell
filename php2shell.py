@@ -51,6 +51,27 @@ from lib.exploit_runner import (  # noqa: E402
     validate_command,
 )
 from lib.exploit_runner import run as run_exploit  # noqa: E402
+
+
+def _runner_accepts(flag: str) -> bool:
+    """True bila `lib.exploit_runner.run` punya parameter bernama `flag`.
+
+    `insecure` diteruskan ke mesin rantai (lib/chain.py sudah punya
+    `Target(..., verify_tls=)`), tetapi signature `run()` dimiliki stream lain
+    yang mungkin belum menyambungkannya. Memeriksa sekali di sini membuat CLI
+    tidak meledak `TypeError: unexpected keyword argument` sementara flag-nya
+    tetap tersedia di parser. Begitu `run()` menerima `insecure`, nilai itu
+    otomatis ikut terkirim tanpa perubahan kode lain.
+    """
+    import inspect
+    try:
+        return flag in inspect.signature(run_exploit).parameters
+    except (TypeError, ValueError):  # pragma: no cover - signature aneh
+        return False
+
+
+_RUN_EXPLOIT_HAS_INSECURE = _runner_accepts("insecure")
+
 from lib.transport import (  # noqa: E402
     DEFAULT_DELAY,
     HAVE_CURL_CFFI,
@@ -154,6 +175,14 @@ def _detect_one(url: str, t: Transport, args) -> dict:
         check_oom=False if getattr(args, "no_oom", False) else None,
         sapi=getattr(args, "sapi", "auto") or "auto",
     )
+    # PolicyError (anti-SSRF / skema ditolak) BUKAN "target bersih". Tanpa
+    # anotasi ini, `detect` melaporkan "versi PHP tidak bocor (header/body
+    # bersih / diproksi CDN)" — operator mengira targetnya cuma menyembunyikan
+    # header, padahal request-nya tidak pernah dikirim (ditolak lokal).
+    err = str(d.error or "")
+    if err.startswith("PolicyError:"):
+        d.reason = ("diblokir kebijakan tujuan (anti-SSRF) — request TIDAK "
+                    "dikirim; " + err.split(":", 1)[1].strip())
     p = preflight_mod.preflight(d)
     return {"url": url, "detect": d.as_dict(), "preflight": p.as_dict()}
 
@@ -162,8 +191,10 @@ def _line(rec: dict) -> str:
     from lib.color import cverdict
     d, p = rec["detect"], rec["preflight"]
     ver = d.get("php_version") or d.get("branch") or "?"
-    tag = "READY" if p["ready"] else "  -  "
-    tag_c = cverdict("ready") if p["ready"] else tag
+    # Gerbang = `status` (tri-state) bila ada, fallback `ready` untuk hasil lama.
+    _ready = (p.get("status") == "ready") if p.get("status") else bool(p["ready"])
+    tag = "READY" if _ready else "  -  "
+    tag_c = cverdict("ready") if _ready else tag
     lvl = {"rce": "RCE", "leak": "LEAK", "no": "NO"}.get(
         (p.get("support") or {}).get("level", ""), "?")
     return (
@@ -173,10 +204,20 @@ def _line(rec: dict) -> str:
 
 
 def _mk_transport(args) -> Transport:
+    """Transport dari flag CLI, dengan pagar keamanan default AKTIF.
+
+    `--insecure` mematikan verifikasi TLS; `--no-follow-redirects` berhenti di
+    3xx pertama; `--allow-private-target` mengizinkan loopback/RFC1918 (lab).
+    Semua default False, jadi pemakaian normal tidak bisa jatuh ke perilaku
+    lama yang tidak memverifikasi sertifikat dan mengikuti redirect buta.
+    """
     return Transport(
         profile=args.ja3, delay=args.delay, timeout=args.timeout,
         proxy=args.proxy, audit_log=args.audit,
         verbose=bool(getattr(args, "verbose", False)),
+        verify_tls=not bool(getattr(args, "insecure", False)),
+        follow_redirects=not bool(getattr(args, "no_follow_redirects", False)),
+        allow_private=bool(getattr(args, "allow_private_target", False)),
     )
 
 
@@ -192,6 +233,43 @@ def _exploit_opts(args) -> dict:
         "retries": getattr(args, "retries", None),
         "fetch": getattr(args, "fetch", None),
     }
+
+
+HUGE_MB_MAX = 512  # sinkron dengan lib/memprobe.SAFE_CEILING_MB
+
+
+def _huge_mb_arg(text: str) -> int:
+    """Validator argparse `--huge-mb` (temuan audit P1-05).
+
+    Dulu `type=int` menerima apa pun, termasuk `-5`, lalu nilainya baru
+    ditolak oleh `assert ... huge_mb > 0` di lib/exploit_runner.py — hasilnya
+    AssertionError (traceback), bukan penolakan rapi, dan baru SETELAH
+    beberapa request terkirim. Di sini nilai ditolak di parser: exit 2,
+    pesan jelas, sebelum satu request pun keluar.
+
+    Batas atas = plafon aman field `big` (lib/memprobe.SAFE_CEILING_MB).
+    Nilai yang sah (mis. 64) diteruskan APA ADANYA ke runner.
+    """
+    try:
+        val = int(str(text).strip(), 10)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError(
+            f"{text!r} bukan bilangan bulat MB (contoh: --huge-mb 64)")
+    if val <= 0:
+        raise argparse.ArgumentTypeError(
+            f"--huge-mb harus > 0 (diberikan {val}). Ukuran field 'big' "
+            f"dalam MB; 0/negatif tidak punya arti di sisi target.")
+    try:
+        from lib import memprobe as _memprobe
+        ceiling = int(_memprobe.SAFE_CEILING_MB)
+    except Exception:  # noqa: BLE001 — jangan gagalkan parsing karena import
+        ceiling = HUGE_MB_MAX
+    if val > ceiling:
+        raise argparse.ArgumentTypeError(
+            f"--huge-mb {val} melewati plafon aman {ceiling} MB "
+            f"(SAFE_CEILING_MB). Field 'big' sebesar itu tidak pernah "
+            f"dikirim ke target.")
+    return val
 
 
 def _add_exploit_flags(p: argparse.ArgumentParser, single: bool) -> None:
@@ -221,9 +299,9 @@ def _add_exploit_flags(p: argparse.ArgumentParser, single: bool) -> None:
                    help="jangan cari offset otomatis")
     g.add_argument("--exploit-profile", choices=("lab", "bookworm"), default=None,
                    help="profil offset exploit.py (BUKAN sidik jari TLS)")
-    g.add_argument("--huge-mb", type=int, default=None,
-                   help="paksa ukuran field 'big' (MB); default: dibaca otomatis "
-                        "dari memory_limit target")
+    g.add_argument("--huge-mb", type=_huge_mb_arg, default=None, metavar="MB",
+                   help=("paksa ukuran field 'big' (MB, 1-%d); default: dibaca "
+                         "otomatis dari memory_limit target" % HUGE_MB_MAX))
     g.add_argument("--fetch", default=None,
                    help="URL yang di-fetch lewat RCE setelah eksekusi")
     g.add_argument("--retries", type=int, default=None,
@@ -247,25 +325,26 @@ def _add_exploit_flags(p: argparse.ArgumentParser, single: bool) -> None:
 # ---------------------------------------------------------------- modes ----
 
 def cmd_detect(args) -> int:
-    t = _mk_transport(args)
     urls = args.urls or load_targets(args.list)
     if not urls:
         print("tidak ada target", file=sys.stderr)
         return 2
     records = []
     from lib.color import cverdict
-    for u in urls:
-        rec = _detect_one(u, t, args)
-        records.append(rec)
-        d = rec["detect"]
-        print(f"  {cverdict(d['verdict']):<10} {d['url']}")
-        if d["reason"]:
-            print(f"             {d['reason']}")
-        for s in d["signals"]:
-            print(f"             + {s}")
-        if d["error"]:
-            print(f"             ! {d['error']}")
-    t.close()
+    # `with` supaya session ditutup walau `_detect_one` melempar. Sebelumnya
+    # `t.close()` ada di akhir fungsi, jadi exception = koneksi bocor.
+    with _mk_transport(args) as t:
+        for u in urls:
+            rec = _detect_one(u, t, args)
+            records.append(rec)
+            d = rec["detect"]
+            print(f"  {cverdict(d['verdict']):<10} {d['url']}")
+            if d["reason"]:
+                print(f"             {d['reason']}")
+            for s in d["signals"]:
+                print(f"             + {s}")
+            if d["error"]:
+                print(f"             ! {d['error']}")
     print()
     print(reporter.table(records))
     print()
@@ -278,10 +357,11 @@ def cmd_detect(args) -> int:
 
 
 def cmd_preflight(args) -> int:
-    t = _mk_transport(args)
     url = _require_scheme(args.urls[0])
-    rec = _detect_one(url, t, args)
-    t.close()
+    rec: dict | None = None
+    with _mk_transport(args) as t:
+        rec = _detect_one(url, t, args)
+    assert rec is not None
     d, p = rec["detect"], rec["preflight"]
     from lib.color import cverdict, keyword
     print(f"URL          : {url}")
@@ -299,13 +379,25 @@ def cmd_preflight(args) -> int:
         print(f"  catatan: {n}")
     print()
     print(f"skor         : {p['score']}/{p['max_score']}")
+    # `status` adalah gerbang tri-state yang sebenarnya (blocked | needs_review |
+    # ready). `ready` tetap dicetak (backward-compat) tetapi yang menjawab
+    # "boleh ditembak atau tidak" adalah `status` — menampilkan hanya `ready`
+    # membuat target needs_review terlihat sama dengan blocked.
+    st = p.get("status") or ("ready" if p.get("ready") else "needs_review")
+    print(f"status       : {st}")
+    if st != "ready" and p.get("review_reasons"):
+        for reason in p["review_reasons"]:
+            print(f"  review: {reason}")
     sup = p.get("support") or {}
     lvl_label = {"rce": "RCE", "leak": "LEAK SAJA", "no": "BELUM TERBUKTI",
                  "unknown": "TIDAK DIKETAHUI"}.get(sup.get("level", ""), "?")
     print(f"dukungan     : {lvl_label}")
     if sup.get("text"):
         print(f"               {sup['text']}")
-    print(f"siap exploit : {keyword('YA', 'bad') if p['ready'] else keyword('TIDAK', 'ok')}")
+    # Tampilkan `status` (gerbang sebenarnya) dengan fallback ke `ready` untuk
+    # hasil preflight versi lama yang belum punya key `status`.
+    siap = st == "ready" if p.get("status") else bool(p.get("ready"))
+    print(f"siap exploit : {keyword('YA', 'bad') if siap else keyword('TIDAK', 'ok')}")
     if args.json:
         print(f"json: {reporter.write_json(args.json, [rec], {'mode': 'preflight', 'cve': CVE_IDS})}")
     return 0
@@ -368,6 +460,11 @@ def _run_exploits(candidates: list[dict], args) -> None:
 
     for r in candidates:
         print(f"  -> {r['url']}  cmd={args.cmd!r}", flush=True)
+        # insecure hanya dikirim bila `run()` memang menerimanya (stream lain
+        # memiliki signature-nya); kalau tidak, biarkan default mesin rantai.
+        extra: dict = {}
+        if _RUN_EXPLOIT_HAS_INSECURE:
+            extra["insecure"] = bool(getattr(args, "insecure", False))
         try:
             res = run_exploit(
                 r["url"], cmd=args.cmd,
@@ -386,6 +483,7 @@ def _run_exploits(candidates: list[dict], args) -> None:
                 max_total_timeout=args.exploit_timeout,
                 quiet=not args.verbose,
                 log=(lambda m: print(f"     {m}", flush=True)),
+                **extra,
             )
         except RuntimeError as e:
             # Kegagalan pra-syarat (mis. post_max_size terlalu kecil) bukan
@@ -423,19 +521,23 @@ def cmd_scan(args) -> int:
     print(f"exploit: {'AKAN dijalankan (target READY saja)' if args.exploit else 'tidak — detect saja'}")
     print()
 
-    t = _mk_transport(args)
     records: list[dict] = []
-    for i, u in enumerate(urls, 1):
-        print(f"[{i}/{len(urls)}] {u}", flush=True)
-        rec = _detect_one(u, t, args)
-        records.append(rec)
-        print(f"          {_line(rec)}")
-        if rec["detect"]["reason"]:
-            print(f"          {rec['detect']['reason']}")
-    t.close()
+    # `with` = session ditutup walau ada exception di tengah scan.
+    with _mk_transport(args) as t:
+        for i, u in enumerate(urls, 1):
+            print(f"[{i}/{len(urls)}] {u}", flush=True)
+            rec = _detect_one(u, t, args)
+            records.append(rec)
+            print(f"          {_line(rec)}")
+            if rec["detect"]["reason"]:
+                print(f"          {rec['detect']['reason']}")
 
     if args.exploit:
-        candidates = [r for r in records if r["preflight"]["ready"]]
+        # Kandidat = `status == "ready"`, bukan sekadar `ready` lama.
+        def _is_ready(r: dict) -> bool:
+            pf = r["preflight"]
+            return (pf.get("status") == "ready") if pf.get("status") else bool(pf.get("ready"))
+        candidates = [r for r in records if _is_ready(r)]
         print()
         print(f"kandidat siap-exploit: {len(candidates)}")
         if not candidates:
@@ -501,23 +603,30 @@ def cmd_exploit(args) -> int:
         print("batal    : perintah proof ditolak sebelum apa pun dikirim")
         return 2
 
-    t = _mk_transport(args)
-    rec = _detect_one(url, t, args)
-    t.close()
+    # `with`: session ditutup walau detect melempar.
+    rec: dict | None = None
+    with _mk_transport(args) as t:
+        rec = _detect_one(url, t, args)
+    assert rec is not None
     d, p = rec["detect"], rec["preflight"]
     print(f"URL      : {url}")
     print(f"verdict  : {d['verdict']} — {d['reason']}")
-    print(f"skor     : {p['score']}/{p['max_score']}  ({'READY' if p['ready'] else 'TIDAK SIAP'})")
+    # `status` (tri-state) bila ada; `ready` tetap fallback untuk hasil lama.
+    st = p.get("status") or ("ready" if p.get("ready") else "needs_review")
+    print(f"skor     : {p['score']}/{p['max_score']}  (status={st})")
     for b in p["blockers"]:
         print(f"  BLOCKER: {b}")
     print()
 
     force = getattr(args, "force", False)
+    # Gerbang sebenarnya = `status == "ready"`; `ready` tetap dipertahankan
+    # sebagai fallback untuk hasil preflight versi lama (tanpa key `status`).
+    siap = (st == "ready") if p.get("status") else bool(p.get("ready"))
 
     # Ditolak: jangan pernah mencetak "akan jalan". Baris itu hanya bermakna kalau
     # perintah MEMANG akan dieksekusi; kalau dicetak setelah DITOLAK, user melihat
     # perintah yang seolah berjalan padahal sudah dibatalkan (menyesatkan).
-    if not p["ready"] and not force:
+    if not siap and not force:
         print("DITOLAK — target tidak memenuhi pra-syarat; pakai --force untuk memaksa")
         print(f"batal    : tidak ada yang dikirim ke {url}")
         print("kurang   : " + (", ".join(p["blockers"]) if p["blockers"] else "pra-syarat lain"))
@@ -529,7 +638,7 @@ def cmd_exploit(args) -> int:
         rec["url"], cmd=getattr(args, "cmd", DEFAULT_CMD),
         opts=_exploit_opts(args),
     )
-    if force and not p["ready"]:
+    if force and not siap:
         print("DIPAKSA — pra-syarat tidak terpenuhi, atas permintaan --force")
     print(f"akan jalan: {preview}")
     print()
@@ -686,7 +795,19 @@ def build_parser() -> argparse.ArgumentParser:
                         help=f"jeda antar-request detik + jitter (default: {DEFAULT_DELAY})")
     common.add_argument("--timeout", type=int, default=15, help="timeout HTTP detik (default: 15)")
     common.add_argument("--proxy", default=None, help="proxy http(s), mis. http://127.0.0.1:8080")
-    common.add_argument("--audit", default=None, help="tulis audit JSONL ke file ini")
+    common.add_argument("--audit", default=None,
+                        help="tulis audit JSONL ke file ini (mode 0600, token diredaksi)")
+    # --- pagar keamanan transport (audit hardening) ---
+    common.add_argument("--insecure", action="store_true",
+                        help="MATIKAN verifikasi TLS (default: verifikasi AKTIF). "
+                             "Hanya untuk lab dengan sertifikat self-signed; "
+                             "jangan dipakai di target nyata")
+    common.add_argument("--no-follow-redirects", action="store_true",
+                        help="jangan ikuti redirect 3xx (default: ikuti maks 5 hop, "
+                             "tiap tujuan divalidasi anti-SSRF)")
+    common.add_argument("--allow-private-target", action="store_true",
+                        help="izinkan target loopback/RFC1918/link-local "
+                             "(default: DITOLAK untuk mencegah SSRF; pakai di lab)")
     common.add_argument("--no-upload-progress", action="store_true", help="lewati probe upload_progress")
     common.add_argument("--no-oom", action="store_true",
                         help="lewati OOM probe aktif (default: otomatis hanya bila verdict unknown/eol)")
@@ -833,13 +954,23 @@ def main(argv: list[str] | None = None) -> int:
 
     # --check-version / mode `version`: tanya GitHub sekali, jangan pernah
     # menggagalkan jalan utama kalau offline (gagal-aman by design).
-    if getattr(args, "check_version", False):
+    # Kontrak flag (temuan audit P2-08): dulu cabang ini memakai
+    # `getattr(args, "check_updates", True)` — dest yang TIDAK PERNAH dibuat
+    # argparse (`--no-check-updates` berdest `no_check_updates`), jadi flag
+    # itu murni hiasan dan `version.check` tetap terpanggil 1x.
+    #   --check-version    -> SELALU cek (permintaan eksplisit operator)
+    #   --no-check-updates -> NOL panggilan jaringan (version.check dilewati)
+    #   default            -> notifikasi ringan cache 1 jam (kecuali `version`)
+    # Bila keduanya diberikan, permintaan eksplisit `--check-version` menang.
+    _no_updates = bool(getattr(args, "no_check_updates", False))
+    _ask_version = bool(getattr(args, "check_version", False))
+    if _ask_version:
         vc = version_mod.check(VERSION, use_cache=True)
         print(f"  {version_mod.format_line(vc)}")
         if vc.update_available:
             print(f"  -> update: git -C {ROOT} pull --ff-only   ({vc.url})")
         print()
-    elif getattr(args, "check_updates", True) and args.mode not in ("version",):
+    elif (not _no_updates) and args.mode not in ("version",):
         # Notifikasi ringan (cache 1 jam): 1 baris bila ada versi baru.
         # Tidak pernah mengeksekusi update — keputusan tetap milik operator.
         try:

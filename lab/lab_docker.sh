@@ -45,7 +45,14 @@ start)
     echo "== hapus container lama (kalau ada) =="
     docker rm -f "$NAME" >/dev/null 2>&1
 
-    mkdir -p "$OUT_DIR"
+    # /out harus bisa ditulis worker Apache (www-data, uid/gid 33) untuk
+    # menaruh file bukti. 0770 + group www-data sudah cukup dan TIDAK
+    # world-writable (world-write + sticky bit): dengan itu siapa pun di host
+    # bisa menaruh/menimpa artefak yang nanti dibaca operator sebagai bukti.
+    # Host: OUT_DIR dibuat mode 0770 (bukan default 0755). Sengaja TIDAK
+    # di-chown ke root — biar tetap milik user pemilik repo.
+    install -d -m 0770 "$OUT_DIR" \
+        || { mkdir -p "$OUT_DIR" && chmod 0770 "$OUT_DIR"; }
 
     echo "== jalankan $NAME di 127.0.0.1:$PORT (mount config penulis) =="
     docker run -d --name "$NAME" \
@@ -55,7 +62,7 @@ start)
         -v "$DOCKER_DIR/www":/var/www/html:ro \
         -v "$OUT_DIR":/out \
         --entrypoint /bin/sh \
-        "$IMAGE" -c 'chmod 1777 /out 2>/dev/null || true; exec apache2-foreground' \
+        "$IMAGE" -c 'install -d -m 0770 -o www-data -g www-data /out 2>/dev/null || { chmod 0770 /out && chgrp www-data /out; }; exec apache2-foreground' \
     || { echo "GAGAL: run" >&2; exit 1; }
 
     echo "== tunggu siap =="

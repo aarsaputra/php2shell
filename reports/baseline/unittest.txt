@@ -1,0 +1,17 @@
+...........[*] rotasi worker lewat HTTP
+........................................................................................................................................../home/lota1337/python/php2shell/tests/test_php2shell.py:933: ResourceWarning: unclosed file <_io.TextIOWrapper name='/home/lota1337/python/php2shell/lib/detect.py' mode='r' encoding='utf-8'>
+  src = open(det.__file__, encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/home/lota1337/python/php2shell/tests/test_php2shell.py:940: ResourceWarning: unclosed file <_io.TextIOWrapper name='/home/lota1337/python/php2shell/lib/../php2shell.py' mode='r' encoding='utf-8'>
+  encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+......................................./home/lota1337/python/php2shell/tests/test_transport_security.py:391: ResourceWarning: unclosed file <_io.TextIOWrapper name='/home/lota1337/.hermes/cache/scratch/tmpmwlzhgjy/audit.jsonl' mode='r' encoding='utf-8'>
+  isi = open(path, encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+..................................................../usr/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 301: 'Moved Permanently'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+.......................
+----------------------------------------------------------------------
+Ran 263 tests in 18.380s
+
+OK

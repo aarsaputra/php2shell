@@ -298,19 +298,41 @@ class TestKlaimBanner(unittest.TestCase):
                       "exploit_runner.py tidak memakai mesin rantai internal")
 
     def test_exploit_py_tidak_dimodifikasi(self):
-        """exploit.py upstream tidak dibawa di repo ini (krdit di README).
-        Sebagai gantinya: pastikan mesin rantai internal TETAP byte-identik
-        dengan referensi — simpan sha256 chain.py dan bandingkan."""
+        """exploit.py upstream tidak dibawa di repo ini (kredit di README).
+
+        Sebagai gantinya: kunci isi mesin rantai internal. Hash di bawah
+        diperbarui SETELAH perubahan yang disengaja di-review, sehingga setiap
+        perubahan byte berikutnya pada lib/chain.py menggagalkan tes dan
+        memaksa pembaca diff-nya dulu.
+
+        Hash ini mencakup empat perubahan sah (audit hardening):
+          1. verifikasi TLS AKTIF secara default (CERT_REQUIRED +
+             check_hostname) — sebelumnya CERT_NONE, artinya tool melewati
+             verifikasi sertifikat tanpa diminta. Pelewatan sekarang harus
+             eksplisit lewat verify_tls=False.
+          2. query string ikut di request line (`self.request_target`), juga
+             `host_header` membungkus IPv6 literal dan `get()` default ke
+             path+query target. Sebelumnya `?route=debug` dibuang sehingga
+             stage 1/2/3 menembak handler yang berbeda dari maksud operator.
+          3. deadline ABSOLUT di `Target` (`deadline`, `remaining()`,
+             `op_timeout()` dengan lantai `MIN_OP_TIMEOUT` dan
+             `DeadlineExceeded`) — semua operasi socket/retry/join memakai
+             sisa anggaran, sehingga timeout tidak lagi akumulatif per
+             operasi dan total eksekusi terbatas pada deadline operator.
+          4. DNS pinning di `Target._connect()`: `resolve_pinned()` dipanggil
+             SEKALI dan soket disambung ke IP hasil validasi (bukan
+             `create_connection(self.host, ...)` yang me-resolve ulang) —
+             menutup celah DNS rebinding. `allow_private` dipertahankan True
+             (target lab) sementara endpoint metadata cloud tetap ditolak.
+        """
         import hashlib
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         p = os.path.join(here, "lib", "chain.py")
         with open(p, "rb") as fh:
             now = hashlib.sha256(fh.read()).hexdigest()
-        # hash ini TERVERIFIKASI ulang 26 Okt 2026 (edit komentar data, tanpa
-        # perubahan logika; diff = 1 baris komentar)
         self.assertEqual(now,
-            "1b446b9ce341e0928f1705e3323a6c8163a2d9e1b4ba7d6b337b18e6318b20e3",
-            "lib/chain.py berubah — perbarui hash ini setelah review")
+            "69e1cad001a23994836ca4f38c4602e1b940c297e717e2c4e8c6c2f375a96031",
+            "lib/chain.py berubah — review diff, lalu perbarui hash ini")
 
 
 class TestBannerKejujuranCVE(unittest.TestCase):
@@ -842,7 +864,8 @@ class TestOomProbeBaru(unittest.TestCase):
         from lib.oomprobe import oom_detect, OOMResult
         r = OOMResult()
         d = r.as_dict()
-        for k in ("verdict", "signal", "evidence", "probes_sent", "probe_results"):
+        for k in ("verdict", "signal", "evidence", "probes_sent",
+                  "probe_results", "confirmed"):
             self.assertIn(k, d)
 
     def test_nested_keys_62_dan_probe_bertingkat(self):
@@ -870,7 +893,7 @@ class TestOomProbeBaru(unittest.TestCase):
 
     def test_oom_in_parser_true_positive(self):
         sys.path.insert(0, TOOLKIT)
-        from lib.oomprobe import _classify_response
+        from lib.oomprobe import _classify_response, OOMResult
 
         class FakeResp:
             status = 200
@@ -879,17 +902,28 @@ class TestOomProbeBaru(unittest.TestCase):
         verdict, signal = _classify_response(FakeResp(), control_body_len=10)
         self.assertEqual(verdict, "vulnerable")
         self.assertEqual(signal, "oom_in_parser")
+        # satu-satunya jalur yang boleh ber-confirmed True
+        self.assertTrue(OOMResult(verdict=verdict).confirmed)
 
     def test_empty_500_differential(self):
+        """Differential empty-500 = DUGAAN, bukan bukti kerentanan.
+
+        500-kosong saat control ber-body konsisten dengan worker FPM mati di
+        tengah request, TAPI pola yang sama muncul saat upstream mati, gateway
+        timeout, atau worker crash karena sebab non-PHP. Karena itu verdict
+        "suspected" dan `confirmed` False; naik ke "vulnerable" hanya kalau
+        salah satu probe memuat fatal OOM berlokasi "Unknown".
+        """
         sys.path.insert(0, TOOLKIT)
-        from lib.oomprobe import _classify_response
+        from lib.oomprobe import _classify_response, OOMResult
 
         class FakeResp:
             status = 500
             body = ""
         verdict, signal = _classify_response(FakeResp(), control_body_len=120)
-        self.assertEqual(verdict, "vulnerable")
+        self.assertEqual(verdict, "suspected")
         self.assertEqual(signal, "empty_500")
+        self.assertFalse(OOMResult(verdict=verdict).confirmed)
 
     def test_detect_auto_oom_default_and_no_oom_flag(self):
         """detect() default: OOM jalan bila verdict unknown/eol; --no-oom
@@ -905,6 +939,121 @@ class TestOomProbeBaru(unittest.TestCase):
                 __import__("os").path.dirname(det.__file__), "..", "php2shell.py"),
             encoding="utf-8").read()
         self.assertIn("--no-oom", src_cli)
+
+
+class TestDokumentasiPagar(unittest.TestCase):
+    """Dokumentasi wajib menutup temuan audit PY-006 butir 4+5 dan tiga flag
+    pagar transport. Tes ini membaca file dokumentasi DARI DISK dan meng-assert
+    isinya — kalau kode berubah tapi dokumen tidak, tes gagal.
+
+    Sengaja toleran format: pencocokan case-insensitive dan memakai regex,
+    supaya penulisan ulang paragraf tidak memecahkan tes selama substansinya
+    tetap ada.
+    """
+
+    README = os.path.join(TOOLKIT, "README.md")
+    README_ID = os.path.join(TOOLKIT, "readme_id.md")
+    TUTORIAL = os.path.join(TOOLKIT, "docs", "TUTORIAL.md")
+    SEMUA = (README, README_ID, TUTORIAL)
+
+    def _teks(self, path):
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+
+    def test_tiga_flag_pagar_terdokumentasi(self):
+        """--insecure, --no-follow-redirects, --allow-private-target harus
+        disebut di ketiga file dokumentasi."""
+        for path in self.SEMUA:
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertIn("--insecure", teks)
+                self.assertIn("--no-follow-redirects", teks)
+                self.assertIn("--allow-private-target", teks)
+
+    def test_default_pagar_dijelaskan(self):
+        """Default-nya AMAN harus tertulis: verifikasi TLS aktif, redirect
+        dibatasi/divalidasi, target privat ditolak."""
+        for path in self.SEMUA:
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertRegex(teks, r"(?i)CERT_REQUIRED|verifikasi[^\n]{0,20}TLS|TLS[^\n]{0,20}verif")
+                self.assertRegex(teks, r"(?i)\b5\s*hop\b|maks[^\n]{0,10}5\s*hop|max(?:imum)?\s*5\s*hops?")
+                self.assertRegex(teks, r"(?i)loopback|RFC\s?1918")
+
+    def test_metadata_cloud_tidak_punya_flag(self):
+        """Endpoint metadata/IMDS harus disebut DAN dinyatakan tidak bisa
+        dibuka dengan flag apa pun — supaya operator lab tidak salah kira."""
+        for path in self.SEMUA:
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertIn("169.254.169.254", teks)
+                self.assertRegex(
+                    teks,
+                    r"(?i)(tidak ada flag|no flag)[^.]{0,120}",
+                )
+
+    def test_mode_bebas_opt_in(self):
+        """Mode bebas generator web shell HARUS disebut sebagai opt-in
+        --allow-free-mode, bukan fitur default."""
+        for path in self.SEMUA:
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertIn("--allow-free-mode", teks)
+                self.assertRegex(
+                    teks,
+                    r"(?i)(opt-in|eksplisit|explicit|tidak ada di build default|"
+                    r"not part of the default|default\w*\s*`?False`?)",
+                )
+
+    def test_mode_bebas_bukan_fitur_nyaman(self):
+        """Peringatan: mode bebas = eksekusi arbitrer / proc_open, bukan fitur
+        kenyamanan; harus ada peringatan stderr."""
+        for path in self.SEMUA:
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertIn("proc_open", teks)
+                self.assertRegex(teks, r"(?i)stderr")
+
+    def test_password_bukan_pengganti_batas_os(self):
+        """PY-006 butir 5: password TIDAK boleh dipresentasikan sebagai
+        pengganti pembatasan hak akses OS."""
+        pola = {
+            self.README: r"(?i)not a substitute",
+            self.README_ID: r"(?i)bukan pengganti",
+            self.TUTORIAL: r"(?i)bukan pengganti",
+        }
+        for path, regex in pola.items():
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertRegex(teks, regex)
+                # batas OS-nya harus disebut konkret, bukan sekadar slogan
+                self.assertRegex(teks, r"(?i)disable_functions")
+                self.assertRegex(teks, r"(?i)open_basedir")
+
+    def test_tidak_ada_klaim_default_12_mb(self):
+        """--huge-mb sudah otomatis; klaim 'default 12 MB' adalah artefak lama
+        yang salah dan tidak boleh muncul lagi (menyebut nilai historis
+        'dulu dipaku 12 MB' tetap boleh)."""
+        pola = re.compile(
+            r"(?i)(default\s*[:=]?\s*12\s?MB|12\s?MB\s*(?:default|bawaan)|"
+            r"12MB\s*(?:default|bawaan))"
+        )
+        for path in self.SEMUA:
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertIsNone(pola.search(teks),
+                                  f"klaim 'default 12 MB' masih ada di {path}")
+
+    def test_catatan_deadline_dan_huge_mb_tetap_ada(self):
+        """Perbaikan audit lain tidak boleh hilang: --exploit-timeout satu
+        deadline absolut, --huge-mb otomatis dari memory_limit."""
+        for path in (self.README, self.README_ID):
+            teks = self._teks(path)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertRegex(teks, r"(?i)exploit-timeout")
+                self.assertRegex(teks, r"(?i)deadline")
+                self.assertRegex(teks, r"(?i)huge-mb")
+                self.assertRegex(teks, r"(?i)memory_limit")
 
 
 if __name__ == "__main__":
