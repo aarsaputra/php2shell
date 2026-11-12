@@ -24,7 +24,7 @@ NOT APPLICABLE.
 
 | Item | Status | Alasan |
 |---|---|---|
-| Proxy + DNS pin | PARTIAL | `--proxy` membuat resolusi DNS dilakukan proxy; pin `CURLOPT_RESOLVE` tidak dipasang. Didokumentasikan, tidak diklaim aman. |
+| Proxy + DNS pin | **CLOSED** | Pin nonaktif saat proxy (fakta teknis), `_pin_disabled_by_proxy` + peringatan CLI + 5 tes. Bukti: `evidence/redirect-validation/proxy-behavior.txt`. |
 | `shell/upshell_live.py` carrier gate | **CLOSED** | `validate_carrier_cmd()` menolak string bebas; 18 tes. |
 | `shell/safe_shell.py` path policy | **CLOSED** | `validate_path_arg()` menolak enumerasi/traversal; 17 kasus tes. |
 | `docker compose` asli | **CLOSED** | plugin v5.7.1; `config`+`create`+`start`+inspect+E2E. |

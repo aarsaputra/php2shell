@@ -21,6 +21,7 @@ Kontrak yang diuji di sini:
 Semua tes memakai mock/localhost — tidak ada paket keluar ke internet.
 """
 
+import io
 import os
 import sys
 import unittest
@@ -231,6 +232,8 @@ class TestFetchEnforcesScope(unittest.TestCase):
         """
         t = Transport(delay=0.0, retries=0, proxy="http://127.0.0.1:3128",
                       allow_private=True)
+        self.assertTrue(t._pin_disabled_by_proxy,
+                        "penanda pin-nonaktif tidak diset saat proxy aktif")
         calls = {}
 
         class FakeSession:
@@ -258,6 +261,42 @@ class TestFetchEnforcesScope(unittest.TestCase):
         self.assertEqual(calls["curl_options"], {},
                          "pin DNS dipasang padahal proxy aktif — perilaku "
                          "residual proxy berubah tanpa dokumentasi")
+
+    def test_cli_mencetak_peringatan_proxy(self):
+        """Batas proxy harus TERBACA oleh operator, bukan hanya di dokumen."""
+        import importlib
+        cli = importlib.import_module("php2shell")
+        args = mock.Mock(
+            ja3="chrome", delay=0.0, timeout=5, proxy="http://127.0.0.1:3128",
+            audit=None, verbose=False, insecure=False,
+            no_follow_redirects=False, allow_private_target=True,
+            redirect_scope="host")
+        buf = io.StringIO()
+        with mock.patch("sys.stdout", buf):
+            t = cli._mk_transport(args)
+        try:
+            out = buf.getvalue()
+            self.assertIn("--proxy aktif", out)
+            self.assertIn("PIN DNS tidak berlaku", out)
+            self.assertTrue(t._pin_disabled_by_proxy)
+        finally:
+            t.close()
+
+    def test_tanpa_proxy_tidak_ada_peringatan(self):
+        import importlib
+        cli = importlib.import_module("php2shell")
+        args = mock.Mock(
+            ja3="chrome", delay=0.0, timeout=5, proxy=None, audit=None,
+            verbose=False, insecure=False, no_follow_redirects=False,
+            allow_private_target=True, redirect_scope="host")
+        buf = io.StringIO()
+        with mock.patch("sys.stdout", buf):
+            t = cli._mk_transport(args)
+        try:
+            self.assertNotIn("PIN DNS tidak berlaku", buf.getvalue())
+            self.assertFalse(t._pin_disabled_by_proxy)
+        finally:
+            t.close()
 
     def test_tanpa_proxy_pin_dns_dipasang(self):
         t = Transport(delay=0.0, retries=0, allow_private=True)

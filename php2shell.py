@@ -216,8 +216,12 @@ def _mk_transport(args) -> Transport:
     (default `host`: host harus sama persis). Semua default paling ketat, jadi
     pemakaian normal tidak bisa jatuh ke perilaku lama yang tidak memverifikasi
     sertifikat dan mengikuti redirect buta ke domain mana pun.
+
+    R2-02: bila `--proxy` dipakai, PIN DNS tidak aktif (proxy yang resolve).
+    Batas itu DICETAK sekali supaya operator sadar jaminan mana yang hilang,
+    bukan menemukannya di dokumentasi belakangan.
     """
-    return Transport(
+    t = Transport(
         profile=args.ja3, delay=args.delay, timeout=args.timeout,
         proxy=args.proxy, audit_log=args.audit,
         verbose=bool(getattr(args, "verbose", False)),
@@ -227,6 +231,11 @@ def _mk_transport(args) -> Transport:
         redirect_scope=getattr(args, "redirect_scope",
                                DEFAULT_REDIRECT_SCOPE),
     )
+    if getattr(t, "_pin_disabled_by_proxy", False):
+        print("  [!] --proxy aktif: PIN DNS tidak berlaku (proxy yang "
+              "melakukan resolusi). Pagar SSRF/metadata dan scope redirect "
+              "tetap jalan.", flush=True)
+    return t
 
 
 def _exploit_opts(args) -> dict:

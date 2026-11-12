@@ -444,6 +444,51 @@ def test_huge_mb_negatif_ditolak_di_lapisan_api(sandbox):
         assert sandbox["probe_calls"] == 0
 
 
+# --------------------------------------------- R2-03: batas waktu/request ---
+#
+# Audit meminta "batas waktu" dan "batas concurrency" ditegakkan di SETIAP
+# API masuk, bukan hanya argparse: nilai negatif, nol (bila tidak valid),
+# tipe salah, dan nilai terlalu besar. Helper `_validate_run_limits` adalah
+# gerbang tunggal untuk itu; tes di bawah menguji helper DAN efeknya lewat
+# run() (tidak ada request yang dikirim).
+
+def test_validate_run_limits_nilai_sah():
+    assert er._validate_run_limits(300, None, 3) == ""
+    assert er._validate_run_limits(0, None, 1) == ""      # 0 = deadline langsung
+    assert er._validate_run_limits(3600, 10_000, 20) == ""
+
+
+@pytest.mark.parametrize("args,harus_ada", [
+    ((-5, None, 3), "max_total_timeout"),
+    ((3601, None, 3), "max_total_timeout"),
+    (("300", None, 3), "max_total_timeout"),
+    ((True, None, 3), "max_total_timeout"),
+    ((300, -1, 3), "max_total_requests"),
+    ((300, 0, 3), "max_total_requests"),
+    ((300, 10_001, 3), "max_total_requests"),
+    ((300, "10", 3), "max_total_requests"),
+    ((300, None, 21), "retries"),
+    ((300, None, 0), "retries"),
+])
+def test_validate_run_limits_menolak(args, harus_ada):
+    why = er._validate_run_limits(*args)
+    assert why, f"{args!r} lolos"
+    assert harus_ada in why, why
+    assert "fail-closed" in why or "harus int" in why, why
+
+
+def test_batas_run_ditolak_sebelum_request(sandbox):
+    """Nilai batas buruk -> run() kembali dengan ValueError, tanpa request."""
+    for kw in ({"max_total_timeout": -5}, {"max_total_requests": -1},
+               {"retries": 99}, {"max_total_timeout": "300"}):
+        FakeChain.made.clear()
+        res = _run(max_total_timeout=kw.get("max_total_timeout", 3),
+                   max_total_requests=kw.get("max_total_requests"),
+                   retries=kw.get("retries", 3), timeout=1, huge_mb=64)
+        assert res.error.startswith("ValueError:"), (kw, res.error)
+        assert FakeChain.made == [], f"{kw!r} masih membangun rantai"
+
+
 def test_memory_limit_tidak_terbaca_menghentikan_eksploitasi(sandbox):
     """Temuan audit P1: limit unknown + tanpa --huge-mb -> BERHENTI, bukan 12 MB.
 

@@ -7,30 +7,34 @@ lebih berguna daripada verdict bersih yang tidak bisa dipertahankan.
 
 ## 1. Residual yang masih terbuka
 
-### RR-1 — Proxy memindahkan resolusi DNS ke proxy (PARTIAL)
+### RR-1 — Proxy memindahkan resolusi DNS ke proxy (CLOSED: dinyatakan + teruji)
 
 **Apa:** Bila operator memakai `--proxy`, `Transport._single()` mengirim request
 lewat proxy dan **tidak** memasang pin `CURLOPT_RESOLVE`. Di jalur urllib,
 `ProxyHandler({})` justru mematikan proxy sepenuhnya.
 
-**Konsekuensi:** Jaminan anti-DNS-rebinding (`resolve_pinned()` sekali resolve,
-soket disambung ke IP tervalidasi) **tidak berlaku** di jalur proxy: proxy
-yang melakukan resolusi, sehingga IP yang benar-benar dituju tidak bisa
+**Konsekuensi:** Jaminan anti-DNS-rebinding **tidak berlaku** di jalur proxy:
+proxy yang melakukan resolusi, sehingga IP yang benar-benar dituju tidak bisa
 diverifikasi dari sisi operator. Pagar metadata/privat di `check_url()` tetap
 berjalan untuk URL yang dikirim, dan scope redirect tetap ditegakkan per hop —
 tetapi IP akhir ditentukan proxy.
 
-**Kenapa tidak diperbaiki di round 2:** Menutup ini menuntut proxy yang
-mendukung pemaksaan tujuan (atau CONNECT ke IP tetap), yang bukan sesuatu yang
-bisa dijamin dari sisi klien untuk proxy arbitrer. Yang bisa dilakukan:
-mendokumentasikan batasnya secara eksplisit dan memperingatkan operator.
+**Perbaikan (audit: "kebijakan fail-closed, atau dokumentasikan secara akurat"):**
+- `Transport._pin_disabled_by_proxy` dihitung **saat konstruksi** (bukan per
+  request), jadi batasnya bisa dibaca sebelum ada trafik.
+- `_mk_transport()` mencetak peringatan sekali ke stdout:
+  `[!] --proxy aktif: PIN DNS tidak berlaku (proxy yang melakukan resolusi).
+  Pagar SSRF/metadata dan scope redirect tetap jalan.`
+- Tes mengunci perilakunya: dengan proxy `curl_options == {}` (pin TIDAK
+  dipasang), proxy diteruskan ke session, dan peringatan muncul; tanpa proxy
+  pin dipasang dan **tidak ada** peringatan.
 
-**Status:** PARTIAL. Tidak diklaim aman. Terdokumentasi di
-`docs/AUDIT_TRANSPORT.md` dan di sini.
+Bukti: `evidence/redirect-validation/proxy-behavior.txt`.
 
-**Mitigasi yang disarankan:** untuk engagement yang butuh jaminan pin, jalankan
-tanpa proxy; bila proxy wajib, anggap pin DNS tidak aktif dan perlakukan hasil
-sebagai "diarahkan proxy".
+**Status:** **CLOSED** sebagai batas yang dinyatakan + teruji, bukan sebagai
+jaminan. Pin DNS tetap hanya berlaku tanpa proxy — itu fakta teknis, bukan
+pilihan implementasi: memasang `CURLOPT_RESOLVE` sambil memakai proxy membuat
+curl mengabaikan proxy atau gagal.
 
 ---
 
@@ -172,24 +176,24 @@ mengubah pendekatan.
 
 | Prioritas | Item | Alasan |
 |---|---|---|
-| P3 | RR-1 (dokumentasi proxy lebih menonjol) | Batas yang sudah didokumentasikan, tapi mudah terlewat |
 | P3 | RR-6 (uji di arm64) | Relevan bila lab dipakai di laptop Apple Silicon |
 | P4 | RR-4 (egress allowlist) | Hanya bila ada kebutuhan fungsional |
 
-Tiga item round 2 lanjutan sudah **CLOSED**: RR-2 (carrier gate
-`upshell_live.py`), RR-3 (path policy `safe_shell.py`), RR-5 (verifikasi
-`docker compose` asli + E2E di container buatan compose).
+Empat item round 2 lanjutan sudah **CLOSED**: RR-1 (proxy dinyatakan +
+teruji), RR-2 (carrier gate `upshell_live.py`), RR-3 (path policy
+`safe_shell.py`), RR-5 (verifikasi `docker compose` asli + E2E di container
+buatan compose).
 
 ---
 
 ## 4. Kesimpulan
 
-Tujuh residual dicatat: **empat CLOSED** di round 2 lanjutan (RR-2, RR-3,
-RR-5 + N11/N12 false-positive proof), **satu PARTIAL** (RR-1 proxy), **satu
-NOT TESTED** (RR-6 arm64), **satu NOT IMPLEMENTED** (RR-4 egress allowlist),
-**satu PARTIAL desain** (RR-7 race timing). Tidak ada satu pun yang merupakan
-**regresi** dari perbaikan round 1 — semuanya batas yang sudah ada sebelumnya
-atau konsekuensi sadar dari desain (fail-closed, tanpa egress, tanpa proxy pin).
+Tujuh residual dicatat: **lima CLOSED** di round 2 lanjutan (RR-1, RR-2, RR-3,
+RR-5, plus N11/N12 false-positive proof), **satu NOT TESTED** (RR-6 arm64),
+**satu NOT IMPLEMENTED** (RR-4 egress allowlist), **satu PARTIAL desain**
+(RR-7 race timing). Tidak ada satu pun yang merupakan **regresi** dari
+perbaikan round 1 — semuanya batas yang sudah ada sebelumnya atau konsekuensi
+sadar dari desain (nol egress, pin DNS hanya tanpa proxy).
 
 Keputusan "READY FOR INDEPENDENT SECURITY RE-REVIEW" diambil dengan
 pengetahuan penuh tentang daftar ini, bukan dengan mengabaikannya.

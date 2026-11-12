@@ -369,6 +369,10 @@ class Transport:
                 f"redirect_scope {redirect_scope!r} tidak dikenal "
                 f"(pilihan: {', '.join(policy.REDIRECT_SCOPES)})")
         self.redirect_scope = redirect_scope
+        # R2-02: penanda eksplisit bahwa PIN DNS tidak aktif karena proxy.
+        # Ditentukan saat konstruksi (bukan per request) supaya bisa DIBACA
+        # oleh pemanggil/audit sebelum ada trafik apa pun.
+        self._pin_disabled_by_proxy = bool(proxy)
         self._last = 0.0
         self._session = None
 
@@ -765,6 +769,10 @@ class Transport:
         # IP literal tidak butuh pin: tidak ada nama yang bisa dibelokkan.
         is_literal = policy.is_ip_literal(host)
 
+        # PIN DNS: hanya dipasang bila TIDAK ada proxy (lihat
+        # `self._pin_disabled_by_proxy`, ditetapkan saat konstruksi). Dengan
+        # proxy, DNS dilakukan proxy sehingga pin tidak bisa dibuktikan —
+        # memasangnya justru membuat curl mengabaikan proxy / gagal.
         if HAVE_CURL_CFFI:
             from curl_cffi import requests as creq
 

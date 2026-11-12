@@ -1,17 +1,17 @@
 === FULL REGRESSION — ROUND 2 FINAL (lab HIDUP) ===
-2026-11-12T15:29:02+08:00
+2026-11-12T15:43:54+08:00
 python : Python 3.14.7
 pytest : pytest 9.1.1
 docker : 28.5.2+dfsg4
 compose: Docker Compose version v5.7.1
-lab    : Up 35 minutes
+lab    : Up 50 minutes
 
 --- PYTEST ---
-........................................... [ 92%]
-.......................................                                               [100%]
-553 passed, 409 subtests passed in 33.09s
+........................................................................ [ 83%]
+................................................................................................                                 [100%]
+567 passed, 409 subtests passed in 32.70s
 --- UNITTEST ---
-Ran 382 tests in 33.006s
+Ran 384 tests in 20.969s
 
 OK
 
@@ -21,13 +21,13 @@ OK
 --- per modul baru (aktual) ---
   test_command_validation          11 passed
   test_chain_command_gate          10 passed
-  test_redirect_scope              27 passed
+  test_redirect_scope              29 passed
   test_producer_lifecycle          8 passed
   test_docker_lab_hardening        32 passed
   test_upshell_carrier_gate        18 passed
 
---- lab MATI: lapis B skip (bukan lulus diam-diam) ---
-dibuktikan: 537 passed, 11 skipped, 0 failed
+--- lab MATI: lapis B skip ---
+dibuktikan: 556 passed, 11 skipped, 0 failed (lab mati)
 === SELESAI ===
 
 __HERMES_PIPE_1de32c553bfc__0__HERMES_PIPE_1de32c553bfc__

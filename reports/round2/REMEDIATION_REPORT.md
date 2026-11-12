@@ -229,18 +229,18 @@ chown dari dalam container.
 
 ## 4. FULL REGRESSION
 
-**Pytest: 553 passed, 409 subtests passed, 0 failed, 0 skipped** (25.06s, lab hidup)
-**Unittest: Ran 382 tests, OK**
+**Pytest: 567 passed, 409 subtests passed, 0 failed, 0 skipped** (32.70s, lab hidup)
+**Unittest: Ran 384 tests, OK**
 **Modul tes:** 20
 
-Dengan lab mati: 537 passed, 11 skipped, 0 failed — 11 tes lapis B
+Dengan lab mati: 556 passed, 11 skipped, 0 failed — 11 tes lapis B
 `test_docker_lab_hardening.py` di-skip dengan pesan yang menyebut cara
 menjalankan lab. Skip disengaja: tes yang butuh container hidup tidak boleh
 lulus diam-diam tanpa container.
 
-Tes per modul baru: `test_command_validation` 11, `test_redirect_scope` 27,
-`test_docker_lab_hardening` 32, `test_upshell_carrier_gate` 18,
-`test_producer_lifecycle` 8, `test_chain_command_gate` 10.
+Tes per modul baru: `test_command_validation` 11, `test_chain_command_gate` 10,
+`test_redirect_scope` 29, `test_docker_lab_hardening` 32,
+`test_upshell_carrier_gate` 18, `test_producer_lifecycle` 8.
 
 Baseline round 2: 438 passed (pytest). Penambahan +115 tes berasal dari
 `test_redirect_scope.py` (27), `test_docker_lab_hardening.py` (32),
