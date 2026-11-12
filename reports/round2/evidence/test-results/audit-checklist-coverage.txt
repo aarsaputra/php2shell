@@ -1,9 +1,10 @@
 === PEMETAAN SETIAP KASUS YANG DIMINTA AUDIT -> TES (verbose) ===
-2026-11-12T15:15:33+08:00
+2026-11-12T15:50:15+08:00
 (pytest.ini memakai addopts=-q; verbosity dipaksa lewat -o addopts=)
+(file ini diregenerasi setelah commit 6b6fdf7: memuat tes chain gate + run limits)
 
 
-### R2-01 — audit: diizinkan, tidak dikenal, argumen valid/invalid, path traversal, metakarakter, substitusi, pipeline, chaining, redirection, kosong, terlalu panjang
+### R2-01 — diizinkan, tidak dikenal, argumen valid/invalid, path traversal, metakarakter, SUBSTITUSI, pipeline, chaining, redirection, kosong, terlalu panjang
 
   tests/test_command_validation.py::TestCommandValidation::test_allowed_basic PASSED [  9%]
   tests/test_command_validation.py::TestCommandValidation::test_allowed_extra PASSED [ 18%]
@@ -20,47 +21,98 @@
   tests/test_command_validation.py::TestCommandValidation::test_rejected_pipeline_dan_redirect PASSED [ 90%]
   tests/test_command_validation.py::TestCommandValidation::test_rejected_unknown PASSED [100%]
 
-### R2-02 — audit: same-origin, subdomain, unrelated, localhost, private, link-local, IPv6 loopback, IPv4-mapped, DNS berubah, redirect loop, http->https, https->http, proxy aktif/nonaktif
+### R2-01 jalur API — Chain() menolak perintah berbahaya (celah ditemukan sendiri)
+
+  tests/test_chain_command_gate.py::TestChainRejectsUnsafeCommand::test_kosong_ditolak 
+  tests/test_chain_command_gate.py::TestChainRejectsUnsafeCommand::test_kosong_ditolak PASSED [ 10%]
+  tests/test_chain_command_gate.py::TestChainRejectsUnsafeCommand::test_panjang_berlebih_ditolak 
+  tests/test_chain_command_gate.py::TestChainRejectsUnsafeCommand::test_panjang_berlebih_ditolak PASSED [ 20%]
+  tests/test_chain_command_gate.py::TestChainRejectsUnsafeCommand::test_perintah_berbahaya_ditolak 
+  tests/test_chain_command_gate.py::TestChainRejectsUnsafeCommand::test_perintah_berbahaya_ditolak PASSED [ 30%]
+  tests/test_chain_command_gate.py::TestChainAllowsLegitimateCommand::test_perintah_identitas_dan_proof 
+  tests/test_chain_command_gate.py::TestChainAllowsLegitimateCommand::test_perintah_identitas_dan_proof PASSED [ 40%]
+  tests/test_chain_command_gate.py::TestChainAllowsLegitimateCommand::test_perintah_tetap_modul_upshell 
+  tests/test_chain_command_gate.py::TestChainAllowsLegitimateCommand::test_perintah_tetap_modul_upshell PASSED [ 50%]
+  tests/test_chain_command_gate.py::TestSingleSourceOfTruth::test_chain_memanggil_check_command_shape PASSED [ 60%]
+  tests/test_chain_command_gate.py::TestSingleSourceOfTruth::test_exploit_runner_tidak_mendefinisikan_ulang PASSED [ 70%]
+  tests/test_chain_command_gate.py::TestSingleSourceOfTruth::test_konstanta_sama_dengan_exploit_runner PASSED [ 80%]
+  tests/test_chain_command_gate.py::TestShapeCheckerContract::test_proof_redirect_bentuk_saja PASSED [ 90%]
+  tests/test_chain_command_gate.py::TestShapeCheckerContract::test_shape_checker_tidak_memeriksa_whitelist PASSED [100%]
+
+### R2-01 tambahan — test_validate_command.py (token terlarang per token)
+
+  tests/test_validate_command.py::TestPagarPerintah::test_alasan_penolakan_informatif PASSED [ 10%]
+  tests/test_validate_command.py::TestPagarPerintah::test_allow_cmd_semantik PASSED [ 20%]
+  tests/test_validate_command.py::TestPagarPerintah::test_allowed_cmds_konsisten_dengan_pagar 
+  tests/test_validate_command.py::TestPagarPerintah::test_allowed_cmds_konsisten_dengan_pagar PASSED [ 30%]
+  tests/test_validate_command.py::TestPagarPerintah::test_batas_byte_ditegakkan PASSED [ 40%]
+  tests/test_validate_command.py::TestPagarPerintah::test_operator_shell_ditolak 
+  tests/test_validate_command.py::TestPagarPerintah::test_operator_shell_ditolak PASSED [ 50%]
+  tests/test_validate_command.py::TestPagarPerintah::test_perintah_diizinkan 
+  tests/test_validate_command.py::TestPagarPerintah::test_perintah_diizinkan PASSED [ 60%]
+  tests/test_validate_command.py::TestPagarPerintah::test_perintah_kosong_ditolak 
+  tests/test_validate_command.py::TestPagarPerintah::test_perintah_kosong_ditolak PASSED [ 70%]
+  tests/test_validate_command.py::TestPagarPerintah::test_setiap_token_terlarang_benar_benar_diblokir 
+  tests/test_validate_command.py::TestPagarPerintah::test_setiap_token_terlarang_benar_benar_diblokir PASSED [ 80%]
+  tests/test_validate_command.py::TestPagarPerintah::test_spasi_di_tepi_dinormalkan PASSED [ 90%]
+  tests/test_validate_command.py::TestPagarPerintah::test_tool_lain_ditolak 
+  tests/test_validate_command.py::TestPagarPerintah::test_tool_lain_ditolak PASSED [100%]
+
+### R2-02 — same-origin, subdomain, unrelated, localhost, private, link-local, IPv6 loopback, IPv4-mapped, DNS berubah, redirect loop, http->https, https->http, PROXY aktif/nonaktif
 
   tests/test_redirect_scope.py::TestNormalizeHostname::test_bracket_ipv6_dan_ipv4_mapped PASSED [  3%]
-  tests/test_redirect_scope.py::TestNormalizeHostname::test_homoglyph_tidak_sama_dengan_ascii PASSED [  7%]
-  tests/test_redirect_scope.py::TestNormalizeHostname::test_idna_unicode_menjadi_punycode PASSED [ 11%]
-  tests/test_redirect_scope.py::TestNormalizeHostname::test_lowercase_dan_titik_akhir PASSED [ 14%]
-  tests/test_redirect_scope.py::TestHostInScope::test_host_harus_sama_persis_pada_mode_host PASSED [ 18%]
-  tests/test_redirect_scope.py::TestHostInScope::test_ip_tidak_punya_subdomain PASSED [ 22%]
-  tests/test_redirect_scope.py::TestHostInScope::test_mode_any_menerima_host_apa_pun PASSED [ 25%]
-  tests/test_redirect_scope.py::TestHostInScope::test_mode_asing_ditolak PASSED [ 29%]
-  tests/test_redirect_scope.py::TestHostInScope::test_subdomain_boundary_bukan_substring PASSED [ 33%]
-  tests/test_redirect_scope.py::TestCheckScope::test_domain_lain_ditolak PASSED [ 37%]
-  tests/test_redirect_scope.py::TestCheckScope::test_downgrade_https_ke_http_ditolak PASSED [ 40%]
-  tests/test_redirect_scope.py::TestCheckScope::test_host_sama_lintas_path_diizinkan PASSED [ 44%]
-  tests/test_redirect_scope.py::TestCheckScope::test_http_ke_https_diizinkan PASSED [ 48%]
-  tests/test_redirect_scope.py::TestCheckScope::test_metadata_tetap_ditolak_lewat_check_url PASSED [ 51%]
-  tests/test_redirect_scope.py::TestCheckScope::test_port_lain_diizinkan_pada_mode_any PASSED [ 55%]
-  tests/test_redirect_scope.py::TestCheckScope::test_port_lain_ditolak PASSED [ 59%]
-  tests/test_redirect_scope.py::TestCheckScope::test_skema_aneh_ditolak PASSED [ 62%]
-  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_dns_pin_hanya_sekali_per_request PASSED [ 66%]
-  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_mode_host_menolak_subdomain PASSED [ 70%]
-  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_mode_subdomains_mengizinkan_subdomain PASSED [ 74%]
-  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_proxy_mematikan_pin_dns_dan_itu_dinyatakan PASSED [ 77%]
-  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_rantai_bertahap_tidak_bisa_keluar_scope PASSED [ 81%]
-  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_redirect_ke_domain_lain_tidak_dikirim PASSED [ 85%]
-  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_redirect_sama_host_diikuti PASSED [ 88%]
-  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_redirect_scope_tidak_dikenal_ditolak_saat_init PASSED [ 92%]
-  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_tanpa_proxy_pin_dns_dipasang PASSED [ 96%]
+  tests/test_redirect_scope.py::TestNormalizeHostname::test_homoglyph_tidak_sama_dengan_ascii PASSED [  6%]
+  tests/test_redirect_scope.py::TestNormalizeHostname::test_idna_unicode_menjadi_punycode PASSED [ 10%]
+  tests/test_redirect_scope.py::TestNormalizeHostname::test_lowercase_dan_titik_akhir PASSED [ 13%]
+  tests/test_redirect_scope.py::TestHostInScope::test_host_harus_sama_persis_pada_mode_host PASSED [ 17%]
+  tests/test_redirect_scope.py::TestHostInScope::test_ip_tidak_punya_subdomain PASSED [ 20%]
+  tests/test_redirect_scope.py::TestHostInScope::test_mode_any_menerima_host_apa_pun PASSED [ 24%]
+  tests/test_redirect_scope.py::TestHostInScope::test_mode_asing_ditolak PASSED [ 27%]
+  tests/test_redirect_scope.py::TestHostInScope::test_subdomain_boundary_bukan_substring PASSED [ 31%]
+  tests/test_redirect_scope.py::TestCheckScope::test_domain_lain_ditolak PASSED [ 34%]
+  tests/test_redirect_scope.py::TestCheckScope::test_downgrade_https_ke_http_ditolak PASSED [ 37%]
+  tests/test_redirect_scope.py::TestCheckScope::test_host_sama_lintas_path_diizinkan PASSED [ 41%]
+  tests/test_redirect_scope.py::TestCheckScope::test_http_ke_https_diizinkan PASSED [ 44%]
+  tests/test_redirect_scope.py::TestCheckScope::test_metadata_tetap_ditolak_lewat_check_url PASSED [ 48%]
+  tests/test_redirect_scope.py::TestCheckScope::test_port_lain_diizinkan_pada_mode_any PASSED [ 51%]
+  tests/test_redirect_scope.py::TestCheckScope::test_port_lain_ditolak PASSED [ 55%]
+  tests/test_redirect_scope.py::TestCheckScope::test_skema_aneh_ditolak PASSED [ 58%]
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_cli_mencetak_peringatan_proxy PASSED [ 62%]
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_dns_pin_hanya_sekali_per_request PASSED [ 65%]
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_mode_host_menolak_subdomain PASSED [ 68%]
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_mode_subdomains_mengizinkan_subdomain PASSED [ 72%]
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_proxy_mematikan_pin_dns_dan_itu_dinyatakan PASSED [ 75%]
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_rantai_bertahap_tidak_bisa_keluar_scope PASSED [ 79%]
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_redirect_ke_domain_lain_tidak_dikirim PASSED [ 82%]
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_redirect_sama_host_diikuti PASSED [ 86%]
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_redirect_scope_tidak_dikenal_ditolak_saat_init PASSED [ 89%]
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_tanpa_proxy_pin_dns_dipasang PASSED [ 93%]
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_tanpa_proxy_tidak_ada_peringatan PASSED [ 96%]
   tests/test_redirect_scope.py::TestFetchEnforcesScope::test_urllib_jalur_selalu_mematikan_proxy_environment PASSED [100%]
 
-### R2-03 — audit: dalam batas, tepat maks, di atas maks, negatif, nol, string, float, API langsung, CLI, chain
+### R2-03 — dalam batas, tepat maks, di atas maks, negatif, nol, string, float, API langsung, CLI, chain, BATAS WAKTU
 
-  tests/test_runner_deadline.py::test_huge_mb_eksplisit_melewati_probe_dan_plafon PASSED [ 33%]
-  tests/test_runner_deadline.py::test_huge_mb_negatif_ditolak_di_lapisan_api PASSED [ 66%]
+  tests/test_runner_deadline.py::test_huge_mb_eksplisit_melewati_probe_dan_plafon PASSED [  6%]
+  tests/test_runner_deadline.py::test_huge_mb_negatif_ditolak_di_lapisan_api PASSED [ 13%]
+  tests/test_runner_deadline.py::test_validate_run_limits_nilai_sah PASSED [ 20%]
+  tests/test_runner_deadline.py::test_validate_run_limits_menolak[args0-max_total_timeout] PASSED [ 26%]
+  tests/test_runner_deadline.py::test_validate_run_limits_menolak[args1-max_total_timeout] PASSED [ 33%]
+  tests/test_runner_deadline.py::test_validate_run_limits_menolak[args2-max_total_timeout] PASSED [ 40%]
+  tests/test_runner_deadline.py::test_validate_run_limits_menolak[args3-max_total_timeout] PASSED [ 46%]
+  tests/test_runner_deadline.py::test_validate_run_limits_menolak[args4-max_total_requests] PASSED [ 53%]
+  tests/test_runner_deadline.py::test_validate_run_limits_menolak[args5-max_total_requests] PASSED [ 60%]
+  tests/test_runner_deadline.py::test_validate_run_limits_menolak[args6-max_total_requests] PASSED [ 66%]
+  tests/test_runner_deadline.py::test_validate_run_limits_menolak[args7-max_total_requests] PASSED [ 73%]
+  tests/test_runner_deadline.py::test_validate_run_limits_menolak[args8-retries] PASSED [ 80%]
+  tests/test_runner_deadline.py::test_validate_run_limits_menolak[args9-retries] PASSED [ 86%]
+  tests/test_runner_deadline.py::test_batas_run_ditolak_sebelum_request PASSED [ 93%]
   tests/test_runner_deadline.py::test_huge_mb_eksplisit_tidak_terkena_gate_unknown PASSED [100%]
   tests/test_chain_request.py::TestMemprobeSafeCeiling::test_huge_mb_for_tidak_berubah PASSED [ 25%]
   tests/test_chain_request.py::TestMemprobeSafeCeiling::test_huge_mb_or_none_tidak_menebak PASSED [ 50%]
   tests/test_chain_request.py::TestMemprobeSafeCeiling::test_konsisten_dengan_cap_huge_mb PASSED [ 75%]
   tests/test_chain_request.py::TestMemprobeSafeCeiling::test_limit_di_atas_plafon_terdeteksi PASSED [100%]
 
-### R2-04 — audit: berhenti setelah sukses/gagal/exception/timeout, thread tidak tertinggal, connection ditutup
+### R2-04 — berhenti setelah sukses/gagal/exception/timeout, thread tidak tertinggal, connection ditutup
 
   tests/test_producer_lifecycle.py::TestShutdownBudget::test_producer_timeout_dipakai_di_request PASSED [ 12%]
   tests/test_producer_lifecycle.py::TestShutdownBudget::test_read_timeout_lebih_kecil_dari_join PASSED [ 25%]
@@ -71,7 +123,7 @@
   tests/test_producer_lifecycle.py::TestRunRaceLifecycle::test_selesai_tanpa_bukti_menghentikan_producer PASSED [ 87%]
   tests/test_producer_lifecycle.py::TestRunRaceLifecycle::test_sukses_menghentikan_producer PASSED [100%]
 
-### R2-05 — audit: compose valid, localhost, non-privileged, capability, no-new-privileges, egress, resource limit, volume, ownership host, cleanup
+### R2-05 — compose valid, localhost, non-privileged, capability, no-new-privileges, egress, resource limit, volume, ownership host, cleanup
 
   tests/test_docker_lab_hardening.py::TestComposeConfig::test_cap_drop_all PASSED [  3%]
   tests/test_docker_lab_hardening.py::TestComposeConfig::test_network_internal PASSED [  6%]
@@ -107,7 +159,7 @@
   tests/test_docker_lab_hardening.py::TestLiveIsolation::test_tidak_privileged PASSED [ 96%]
   tests/test_docker_lab_hardening.py::TestLiveIsolation::test_worker_uid_mapping_ke_pemilik_repo PASSED [100%]
 
-### RR-2 / RR-3 — residual
+### RR-2 — carrier gate upshell_live.py
 
   tests/test_upshell_carrier_gate.py::TestCarrierFormsDipakaiModul::test_bersihkan_artefak 
   tests/test_upshell_carrier_gate.py::TestCarrierFormsDipakaiModul::test_bersihkan_artefak PASSED [  5%]
@@ -140,6 +192,9 @@
   tests/test_upshell_carrier_gate.py::TestFormsCoverAllModuleUsages::test_perintah_tetap_modul_tercakup PASSED [ 94%]
   tests/test_upshell_carrier_gate.py::TestFormsCoverAllModuleUsages::test_setiap_char_base64_bisa_ditulis 
   tests/test_upshell_carrier_gate.py::TestFormsCoverAllModuleUsages::test_setiap_char_base64_bisa_ditulis PASSED [100%]
+
+### RR-3 — path policy safe_shell.py
+
   tests/test_report_and_shell.py::test_path_enumerasi_dan_traversal_ditolak[ls /] PASSED [  5%]
   tests/test_report_and_shell.py::test_path_enumerasi_dan_traversal_ditolak[ls /etc] PASSED [ 11%]
   tests/test_report_and_shell.py::test_path_enumerasi_dan_traversal_ditolak[stat /etc/shadow] PASSED [ 17%]
@@ -158,6 +213,15 @@
   tests/test_report_and_shell.py::test_path_di_area_diizinkan_lolos[ls -la /usr/local/etc/php] PASSED [ 94%]
   tests/test_report_and_shell.py::test_path_di_area_diizinkan_lolos[uname -a] PASSED [100%]
 
-### TOTAL
-........................................                  [100%]
-543 passed, 376 subtests passed in 28.13s
+### TOTAL SUITE
+................................................................................................                                 [100%]
+567 passed, 409 subtests passed in 24.26s
+
+### UNITTEST
+Ran 384 tests in 22.219s
+
+OK
+
+__HERMES_PIPE_1de32c553bfc__0 0__HERMES_PIPE_1de32c553bfc__
+
+__HERMES_CWD_1de32c553bfc__/home/lota1337/python/php2shell__HERMES_CWD_1de32c553bfc__
