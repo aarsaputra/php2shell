@@ -173,6 +173,12 @@ def _producer(cfg: RaceConfig) -> None:
         # chunked streaming: TANPA Content-Length supaya requests kirim
         # tiap yield benar-benar bertahap (trickle terjaga); Apache menerima
         # chunked multipart tanpa masalah.
+        # R2-04: timeout I/O producer HARUS lebih kecil dari budget join,
+        # kalau tidak `_stop_and_join()` bisa menyerah selagi thread masih
+        # sah-sah saja menunggu socket (dulu: read timeout 30s vs join 5s —
+        # join selalu kalah, setiap kali producer macet di jaringan).
+        # Chunk dikirim tiap `cfg.chunk_delay` (default 0.1s), jadi 4s sudah
+        # jauh lebih longgar daripada jarak antar-chunk yang normal.
         requests.post(
             cfg.url,
             data=gen(),
@@ -181,7 +187,7 @@ def _producer(cfg: RaceConfig) -> None:
                 "Content-Type": f"multipart/form-data; boundary={b}",
                 "Transfer-Encoding": "chunked",
             },
-            timeout=(10, 30),
+            timeout=(_PRODUCER_CONNECT_TIMEOUT, _PRODUCER_READ_TIMEOUT),
         )
     except Exception:  # noqa: BLE001 — producer mati tidak fatal; consumer lanjut
         pass
@@ -198,6 +204,17 @@ def _get(url: str, sid: str, timeout: float = 8.0) -> tuple[int, bytes]:
 _JOIN_TIMEOUT = 5.0        # batas tunggu producer berhenti setelah cfg.stop
 _JOIN_MIN_TIMEOUT = 0.25   # sisa durasi bisa ~0 → tetap beri jeda join minimal
 _PRODUCER_NAME = "x115560-producer"
+
+# R2-04 — koordinasi budget shutdown. Producer hanya bisa berhenti SENDIRI
+# kalau socket-nya punya timeout lebih pendek daripada jendela join. Dengan
+# read timeout 30s vs join 5s, `_stop_and_join()` selalu menyerah saat producer
+# macet di jaringan; thread daemon lalu hidup terus (menembak target setelah
+# pemanggil menyatakan selesai). Read timeout 4s < join 5s < durasi race.
+_PRODUCER_CONNECT_TIMEOUT = 4.0
+_PRODUCER_READ_TIMEOUT = 4.0
+# Jarak aman: join harus lebih besar dari read timeout supaya thread yang
+# sedang memblokir di socket bisa keluar sebelum join menyerah.
+assert _PRODUCER_READ_TIMEOUT < _JOIN_TIMEOUT
 
 
 def _stop_and_join(cfg: RaceConfig, t: threading.Thread, deadline: float, log) -> bool:

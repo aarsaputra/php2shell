@@ -1,0 +1,30 @@
+=== R2-02: PERILAKU PROXY DINYATAKAN SECARA AKURAT (audit requirement) ===
+2026-11-12T15:42:21+08:00
+
+--- penanda pin DNS ditentukan saat konstruksi ---
+  proxy=None                     _pin_disabled_by_proxy=False
+  proxy=http://127.0.0.1:3128    _pin_disabled_by_proxy=True
+
+--- CLI mencetak peringatan saat --proxy aktif ---
+    [!] --proxy aktif: PIN DNS tidak berlaku (proxy yang melakukan resolusi). Pagar SSRF/metadata dan scope redirect tetap jalan.
+
+--- tanpa --proxy: tidak ada peringatan (pin aktif) ---
+  jumlah peringatan: 0
+
+--- proxy TIDAK dipasang saat allow_private (pagar tetap jalan) ---
+  proxies  : {'http': 'http://127.0.0.1:3128', 'https': 'http://127.0.0.1:3128'}
+  pin opts : {} (kosong = pin TIDAK dipasang, sesuai dokumen)
+
+--- tes ---
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_cli_mencetak_peringatan_proxy PASSED [ 20%]
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_proxy_mematikan_pin_dns_dan_itu_dinyatakan PASSED [ 40%]
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_tanpa_proxy_pin_dns_dipasang PASSED [ 60%]
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_tanpa_proxy_tidak_ada_peringatan PASSED [ 80%]
+  tests/test_redirect_scope.py::TestFetchEnforcesScope::test_urllib_jalur_selalu_mematikan_proxy_environment PASSED [100%]
+  ======================= 5 passed, 24 deselected in 0.07s =======================
+
+=== SELESAI ===
+
+__HERMES_PIPE_1de32c553bfc__0__HERMES_PIPE_1de32c553bfc__
+
+__HERMES_CWD_1de32c553bfc__/home/lota1337/python/php2shell__HERMES_CWD_1de32c553bfc__

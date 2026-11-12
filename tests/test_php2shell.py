@@ -324,6 +324,15 @@ class TestKlaimBanner(unittest.TestCase):
              `create_connection(self.host, ...)` yang me-resolve ulang) —
              menutup celah DNS rebinding. `allow_private` dipertahankan True
              (target lab) sementara endpoint metadata cloud tetap ditolak.
+          5. R2-03: `Chain.__init__` memvalidasi `huge_mb` lewat
+             `memprobe.validate_huge_mb()` (batas 1..SAFE_CEILING_MB) sebelum
+             field `big` dibangun — jalur API Python langsung tidak lagi bisa
+             melampaui plafon yang ditegakkan argparse.
+          6. R2-01 jalur API: `Chain.__init__` memanggil
+             `cmd_policy.check_command_shape(cmd)` sehingga perintah dengan
+             chaining/token terlarang ditolak di sini juga, bukan hanya di
+             `exploit_runner.validate_command()`. Sebelumnya yang diperiksa
+             hanya panjang <= 14 byte, jadi `Chain(t, "sh</out/c")` sah.
         """
         import hashlib
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -331,7 +340,7 @@ class TestKlaimBanner(unittest.TestCase):
         with open(p, "rb") as fh:
             now = hashlib.sha256(fh.read()).hexdigest()
         self.assertEqual(now,
-            "69e1cad001a23994836ca4f38c4602e1b940c297e717e2c4e8c6c2f375a96031",
+            "bacf9b8ee62d70737af1921462887c9746cbf3fe84d11798e83dc93d26adafa6",
             "lib/chain.py berubah — review diff, lalu perbarui hash ini")
 
 

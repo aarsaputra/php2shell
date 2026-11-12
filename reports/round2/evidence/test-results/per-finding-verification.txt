@@ -1,0 +1,15 @@
+=== VERIFIKASI PER BUTIR AUDIT (dijalankan ulang, kode HEAD 5c2f3ae) ===
+2026-11-12T15:54:01+08:00
+catatan: '-q' dua kali (pytest.ini addopts=-q + -q) MENGHAPUS baris ringkasan,
+         sehingga percobaan sebelumnya keluar rc=1 dengan output kosong.
+         Di sini dipakai -o addopts= agar ringkasan selalu tercetak.
+
+[R2-01] schema + chain gate + token                        31 passed in 0.08s
+[R2-02] scope + proxy + transport                          101 passed in 0.81s
+[R2-03] huge_mb + run limits + chain                       79 passed in 2.10s
+[R2-04] producer lifecycle                                 22 passed in 1.81s
+[R2-05] docker isolation + compose                         32 passed in 0.68s
+[RR-2/RR-3] carrier gate + path policy                     121 passed in 0.72s
+[TOTAL suite]                                               567 passed in 25.07s
+
+[UNITTEST]                                                 Ran 384 tests in 20.760s OK 

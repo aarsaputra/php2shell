@@ -79,6 +79,10 @@ from lib.transport import (  # noqa: E402
     Transport,
     load_targets,
 )
+from lib.target_policy import (  # noqa: E402
+    DEFAULT_REDIRECT_SCOPE,
+    REDIRECT_SCOPES,
+)
 
 CVE_IDS = banner_mod.CVE_IDS
 CVE_CHOICES = ("CVE-2026-109618", "CVE-2026-109619")
@@ -207,18 +211,31 @@ def _mk_transport(args) -> Transport:
     """Transport dari flag CLI, dengan pagar keamanan default AKTIF.
 
     `--insecure` mematikan verifikasi TLS; `--no-follow-redirects` berhenti di
-    3xx pertama; `--allow-private-target` mengizinkan loopback/RFC1918 (lab).
-    Semua default False, jadi pemakaian normal tidak bisa jatuh ke perilaku
-    lama yang tidak memverifikasi sertifikat dan mengikuti redirect buta.
+    3xx pertama; `--allow-private-target` mengizinkan loopback/RFC1918 (lab);
+    `--redirect-scope` menentukan seberapa jauh hop redirect boleh pergi
+    (default `host`: host harus sama persis). Semua default paling ketat, jadi
+    pemakaian normal tidak bisa jatuh ke perilaku lama yang tidak memverifikasi
+    sertifikat dan mengikuti redirect buta ke domain mana pun.
+
+    R2-02: bila `--proxy` dipakai, PIN DNS tidak aktif (proxy yang resolve).
+    Batas itu DICETAK sekali supaya operator sadar jaminan mana yang hilang,
+    bukan menemukannya di dokumentasi belakangan.
     """
-    return Transport(
+    t = Transport(
         profile=args.ja3, delay=args.delay, timeout=args.timeout,
         proxy=args.proxy, audit_log=args.audit,
         verbose=bool(getattr(args, "verbose", False)),
         verify_tls=not bool(getattr(args, "insecure", False)),
         follow_redirects=not bool(getattr(args, "no_follow_redirects", False)),
         allow_private=bool(getattr(args, "allow_private_target", False)),
+        redirect_scope=getattr(args, "redirect_scope",
+                               DEFAULT_REDIRECT_SCOPE),
     )
+    if getattr(t, "_pin_disabled_by_proxy", False):
+        print("  [!] --proxy aktif: PIN DNS tidak berlaku (proxy yang "
+              "melakukan resolusi). Pagar SSRF/metadata dan scope redirect "
+              "tetap jalan.", flush=True)
+    return t
 
 
 def _exploit_opts(args) -> dict:
@@ -231,6 +248,7 @@ def _exploit_opts(args) -> dict:
         "htdata_offset": getattr(args, "htdata_offset", None),
         "huge_mb": getattr(args, "huge_mb", None),
         "retries": getattr(args, "retries", None),
+        "max_total_requests": getattr(args, "max_total_requests", None),
         "fetch": getattr(args, "fetch", None),
     }
 
@@ -305,7 +323,9 @@ def _add_exploit_flags(p: argparse.ArgumentParser, single: bool) -> None:
     g.add_argument("--fetch", default=None,
                    help="URL yang di-fetch lewat RCE setelah eksekusi")
     g.add_argument("--retries", type=int, default=None,
-                   help="jumlah retry per tahap (default upstream 3)")
+                   help="jumlah percobaan maksimum per tahap (default 3; total worst-case: 3*N+2)")
+    g.add_argument("--max-total-requests", type=int, default=None,
+                   help="batas absolut TOTAL request ke target (melebihi ini -> STOP)")
     g.add_argument("--no-pre-rotate", action="store_true",
                    help="jangan rotate worker sebelum preflight")
     g.add_argument("--no-retry-rotate", action="store_true",
@@ -475,6 +495,7 @@ def _run_exploits(candidates: list[dict], args) -> None:
                 htdata_offset=args.htdata_offset,
                 huge_mb=args.huge_mb,
                 retries=args.retries or 3,
+                max_total_requests=args.max_total_requests,
                 no_pre_rotate=args.no_pre_rotate,
                 no_retry_rotate=args.no_retry_rotate,
                 fetch=args.fetch or "",
@@ -808,6 +829,13 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--allow-private-target", action="store_true",
                         help="izinkan target loopback/RFC1918/link-local "
                              "(default: DITOLAK untuk mencegah SSRF; pakai di lab)")
+    common.add_argument("--redirect-scope", default=DEFAULT_REDIRECT_SCOPE,
+                        choices=list(REDIRECT_SCOPES),
+                        help="seberapa jauh hop redirect boleh pergi setelah TARGET "
+                             "AWAL (default %(default)s): host = host sama persis; "
+                             "subdomains = host + subdomain sah; any = host bebas "
+                             "(opt-in). Pagar IP/metadata dan larangan downgrade "
+                             "https->http berlaku di semua mode.")
     common.add_argument("--no-upload-progress", action="store_true", help="lewati probe upload_progress")
     common.add_argument("--no-oom", action="store_true",
                         help="lewati OOM probe aktif (default: otomatis hanya bila verdict unknown/eol)")

@@ -495,6 +495,43 @@ DITOLAK_BUKAN_WHITELIST = [
 ]
 
 
+# RR-3: enumerasi & traversal path. Sebelumnya `ls /` dan `ls ..` LOLOS dari
+# safe_shell (grammar-nya mengizinkan '/' di argumen); sekarang ditolak karena
+# path harus menunjuk file tertentu di bawah area yang diizinkan.
+DITOLAK_PATH = [
+    "ls /",
+    "ls /etc",
+    "stat /etc/shadow",
+    "ls ..",
+    "ls ../..",
+    "ls .",
+    "ls ~",
+    "ls *",
+    "head -n 5 /etc/passwd",
+    "stat -c %a /etc/shadow",
+    "stat /var/www/../../etc/passwd",
+    "tail -1 /var/log/apache2/access.log",
+]
+
+
+@pytest.mark.parametrize("entry", DITOLAK_PATH)
+def test_path_enumerasi_dan_traversal_ditolak(entry):
+    why = safe_shell.validate_command(entry)
+    assert why, f"{entry!r} lolos padahal path terlarang"
+    assert why.startswith("ditolak:")
+
+
+@pytest.mark.parametrize("entry", [
+    "ls -la /var/www/html",
+    "stat -c %a /var/www/html/index.php",
+    "head -n 5 /tmp/staging",
+    "ls -la /usr/local/etc/php",
+    "uname -a",
+])
+def test_path_di_area_diizinkan_lolos(entry):
+    assert safe_shell.validate_command(entry) == "", entry
+
+
 @pytest.mark.parametrize("entry", DITOLAK_BUKAN_WHITELIST)
 def test_bukan_whitelist_ditolak(entry):
     why = safe_shell.validate_command(entry)
@@ -519,8 +556,12 @@ DITERIMA = [
     "php -v",
     "ls -la /var/www/html",
     "date +%s",
-    "head -n 5 /etc/hostname",
-    "stat -c %a /etc/passwd",
+    # RR-3: path di bawah area yang diizinkan (docroot / staging / conf PHP).
+    # Dulu daftar ini memakai /etc/hostname dan /etc/passwd — keduanya kini
+    # DITOLAK oleh `validate_path_arg()`: membaca /etc/passwd bukan bukti akses
+    # dan `/etc` adalah enumerasi konfigurasi host, bukan target engagement.
+    "head -n 5 /var/www/html/index.php",
+    "stat -c %a /var/www/html/index.php",
 ]
 
 

@@ -88,6 +88,36 @@ def exceeds_safe_ceiling(limit_bytes: int | None) -> bool:
         return False
     return limit_bytes / (1024 ** 2) >= SAFE_CEILING_MB
 
+
+# ------------------------------------------------------------------ R2-03 ---
+# Satu-satunya validator ukuran field `big` di lapisan business logic.
+# Diletakkan di sini (bukan di exploit_runner) karena `lib/chain.py` juga
+# membuat payload dan TIDAK boleh mengimpor exploit_runner (siklus impor).
+# argparse hanya menjaga jalur CLI; pemanggil API Python langsung
+# (Chain(t, "id", huge_mb=10**9), run(huge_mb=-1)) harus tertahan di sini.
+def validate_huge_mb(value: object, *, floor: int = 1,
+                     cap: int | None = None) -> int:
+    """Validasi & normalisasi ukuran field `big` (MB).
+
+    Menolak (ValueError): bool, non-int (str/float/None), < floor, > cap.
+    Mengembalikan int yang sudah tervalidasi — pemanggil memakai nilai
+    kembalian ini, bukan nilai mentahnya.
+    """
+    top = SAFE_CEILING_MB if cap is None else int(cap)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(
+            f"huge_mb harus int (MB), bukan {type(value).__name__}: {value!r}")
+    if value < floor:
+        raise ValueError(
+            f"huge_mb={value} < {floor}: field 'big' minimal {floor} MB; "
+            f"0/negatif tidak punya arti di sisi target")
+    if value > top:
+        raise ValueError(
+            f"huge_mb={value} melewati plafon aman {top} MB "
+            f"(SAFE_CEILING_MB); field 'big' sebesar itu tidak pernah dikirim")
+    return value
+
+
 # PHP menolak body sebelum skrip jalan. Pesannya berbeda dari OOM biasa:
 #   Warning: POST Content-Length of N bytes exceeds the limit of M bytes
 # Ini bukan leak, tapi justru INFORMASI: kita jadi tahu batas body target,

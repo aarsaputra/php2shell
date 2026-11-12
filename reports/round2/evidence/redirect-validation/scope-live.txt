@@ -1,0 +1,37 @@
+=== R2-02 LIVE: scope redirect (mock server lokal, tanpa internet) ===
+server: 127.0.0.1:18099 (redirect /cross -> 127.0.0.2:18099)
+
+--- /same (default host)               : host sama, harus DIIKUTI
+    status=200 body='FINAL-OK'
+    error=''
+    hops=2 -> ['http://127.0.0.1:18099/same', 'http://127.0.0.1:18099/final']
+
+--- /cross (default host)               : host lain (127.0.0.2), harus DITOLAK
+    status=0 body=''
+    error="PolicyError pada hop redirect ke-1: redirect keluar scope: 'http://127.0.0.2:18099/final' (host '127.0.0.2' ti"
+    hops=1 -> ['http://127.0.0.1:18099/cross']
+
+--- /port (default host)               : port lain, harus DITOLAK
+    status=0 body=''
+    error="PolicyError pada hop redirect ke-1: redirect berpindah port 18099 -> 18100 pada host yang sama ('http://127.0."
+    hops=1 -> ['http://127.0.0.1:18099/port']
+
+Traceback (most recent call last):
+  File "<stdin>", line 28, in <module>
+TypeError: unsupported format string passed to dict.__format__
+=== SELESAI ===
+
+__HERMES_CWD_c9782edbcbae__/home/lota1337/python/php2shell__HERMES_CWD_c9782edbcbae__
+
+--- ulang kasus mode any (format string diperbaiki) ---
+--- /cross mode=any          : mode any: host lain DIIKUTI (opt-in eksplisit)
+    status=0 body='' hops=2
+    error='ConnectionError: Failed to perform, curl: (7) Failed to connect to 127.0.0.2:18099 after 0 ms: Could not connect to serv'
+
+--- /cross mode=subdomains   : mode subdomains: IP beda tetap DITOLAK
+    status=0 body='' hops=1
+    error="PolicyError pada hop redirect ke-1: redirect keluar scope: 'http://127.0.0.2:18099/final' (host '127.0.0.2' tidak termas"
+
+=== SELESAI (bagian 2) ===
+
+__HERMES_CWD_c9782edbcbae__/home/lota1337/python/php2shell__HERMES_CWD_c9782edbcbae__
