@@ -67,6 +67,7 @@ from collections import Counter
 
 from . import target_policy as _policy
 from . import memprobe
+from . import cmd_policy
 
 # --------------------------------------------------------------- konstanta --
 
@@ -511,6 +512,14 @@ class Chain:
 
         p = table[profile]
         self.t = target
+        # R2-01 (jalur API): Chain() menerima `cmd` dari pemanggil mana pun,
+        # jadi bentuknya diperiksa DI SINI juga — bukan hanya di
+        # exploit_runner.validate_command(). Tanpa ini,
+        # `Chain(t, "sh</out/c")` melewati seluruh pagar command policy
+        # (sebelumnya yang diperiksa hanya panjang <= 14 byte).
+        _shape = cmd_policy.check_command_shape(cmd)
+        if _shape:
+            raise ValueError(_shape)
         self.cmd = cmd.encode()
         self.cve = cve
         self.profile = profile

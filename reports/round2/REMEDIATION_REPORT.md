@@ -50,6 +50,26 @@ bukan pengganti grammar argumen.
 - `cat` dan `env` dihapus dari `EXTRA_ALLOWED_CMDS`: keduanya membaca file /
   environment sembarang, bukan bukti identitas.
 
+**Celah tambahan yang ditemukan saat memverifikasi cakupan audit (dan DITUTUP):**
+`lib/chain.py` hanya memeriksa **panjang** perintah (`MAX_CMD = 14`), bukan
+isinya — dan pesan errornya bahkan mencontohkan `sh</out/c`. Artinya seluruh
+pagar `validate_command()` bisa dilewati lewat jalur API:
+
+```python
+chain.Chain(target, "sh</out/c")     # LOLOS sebelum patch
+```
+
+Perbaikan: aturan bentuk (batas byte, token terlarang, kanal bukti)
+dipindahkan ke modul netral `lib/cmd_policy.py` dan **dipakai kedua jalur**
+(`exploit_runner` mengimpor aliasnya; `chain.Chain.__init__` memanggil
+`check_command_shape()`). Tanpa modul netral ini, `chain` harus mengimpor
+`exploit_runner` — siklus impor yang dilarang.
+
+Bukti: `evidence/command-validation/chain-api-gate.txt` — 14 vektor ditolak
+dalam <0.1 ms (jadi SEBELUM jaringan), 5 kontrol positif tetap lolos, dan
+konstanta terbukti identik di kedua jalur. Tes:
+`tests/test_chain_command_gate.py` (10).
+
 **Bukti live** (`evidence/command-validation/e2e-live.txt`):
 
 | Input | Hasil |
@@ -209,24 +229,25 @@ chown dari dalam container.
 
 ## 4. FULL REGRESSION
 
-**Pytest: 537 passed, 361 subtests passed, 0 failed, 0 skipped** (35.04s, lab hidup)
-**Unittest: Ran 366 tests, OK** (29.63s)
-**Modul tes:** 19
+**Pytest: 553 passed, 409 subtests passed, 0 failed, 0 skipped** (25.06s, lab hidup)
+**Unittest: Ran 382 tests, OK**
+**Modul tes:** 20
 
-Dengan lab mati: 521 passed, 11 skipped, 0 failed — 11 tes lapis B
+Dengan lab mati: 537 passed, 11 skipped, 0 failed — 11 tes lapis B
 `test_docker_lab_hardening.py` di-skip dengan pesan yang menyebut cara
 menjalankan lab. Skip disengaja: tes yang butuh container hidup tidak boleh
 lulus diam-diam tanpa container.
 
-Tes per modul baru: `test_command_validation` 8, `test_redirect_scope` 24,
-`test_producer_lifecycle` 8, `test_docker_lab_hardening` 32,
-`test_upshell_carrier_gate` 18.
+Tes per modul baru: `test_command_validation` 11, `test_redirect_scope` 27,
+`test_docker_lab_hardening` 32, `test_upshell_carrier_gate` 18,
+`test_producer_lifecycle` 8, `test_chain_command_gate` 10.
 
-Baseline round 2: 438 passed (pytest). Penambahan +99 tes berasal dari
-`test_redirect_scope.py` (24), `test_docker_lab_hardening.py` (32),
-`test_upshell_carrier_gate.py` (18), `test_producer_lifecycle.py` (8),
-`test_command_validation.py` (8), plus kasus parametrize baru di
-`test_report_and_shell.py` (17) dan `test_runner_deadline.py`.
+Baseline round 2: 438 passed (pytest). Penambahan +115 tes berasal dari
+`test_redirect_scope.py` (27), `test_docker_lab_hardening.py` (32),
+`test_upshell_carrier_gate.py` (18), `test_chain_command_gate.py` (10),
+`test_command_validation.py` (11), `test_producer_lifecycle.py` (8),
+plus kasus parametrize baru di `test_report_and_shell.py` (17) dan
+`test_runner_deadline.py`.
 
 Lima file tes lama **diperbarui** (bukan dihapus) karena kontraknya berubah
 secara sengaja oleh hardening — semuanya dengan alasan tertulis:
