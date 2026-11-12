@@ -68,6 +68,56 @@ SAFE_EXECUTABLES = frozenset({
 
 MAX_CMD_CHARS = 120
 
+# ---------------------------------------------------------------- RR-3 -----
+# Path operand policy. `safe_shell` adalah GENERATOR (perintah ditanam ke
+# webshell oleh operator), jadi ia butuh path argumen yang sah — `stat
+# /var/www/html/x.php`, `head -n 5 ...`. Yang tidak boleh: enumerasi root dan
+# traversal, karena keduanya adalah langkah recon, bukan bukti akses.
+#
+# Ini menyelaraskan arah kebijakan dengan `exploit_runner.ARG_SCHEMAS` (yang
+# menolak SEMUA path karena jalurnya proof-of-access 14 byte). Dua jalur
+# memang beda kebutuhan; yang disamakan adalah sifatnya: path harus menunjuk
+# ke suatu tempat yang spesifik di bawah docroot, bukan ke akar filesystem.
+PATH_SAFE_ROOTS = ("/var/www/", "/tmp/", "/usr/local/etc/php/")
+PATH_FORBIDDEN_EXACT = frozenset({"/", "//", "/.", "/..", "~", "*", ".", "..", "..."})
+
+
+def validate_path_arg(arg: str) -> str:
+    """Alasan penolakan bila `arg` adalah path yang tidak boleh ('' = sah).
+
+    Aturan:
+      * bukan path (tanpa '/' dan bukan '.'/'..') -> sah, diserahkan ke
+        grammar argumen;
+      * exact `/`, `//`, `.`, `..`, `~`, `*` -> ditolak (enumerasi/traversal);
+      * memuat `..` sebagai segmen -> ditolak;
+      * path absolut HARUS di bawah salah satu `PATH_SAFE_ROOTS`;
+      * path relatif selain di atas -> sah (mis. `-n`, `%a`, `x.php`).
+    """
+    text = str(arg or "")
+    if text in PATH_FORBIDDEN_EXACT:
+        return (f"ditolak: argumen path {text!r} menunjuk direktori induk/akar/"
+                f"glob, bukan file tertentu — enumerasi filesystem bukan bukti "
+                f"akses")
+    if "/" not in text:
+        return ""
+    segments = [s for s in text.split("/") if s not in ("", ".")]
+    if ".." in segments or ".." in text:
+        return (f"ditolak: argumen path {text!r} memuat '..' (traversal) — "
+                f"hanya path di bawah docroot yang diizinkan")
+    if text.startswith("/"):
+        # Root dibandingkan tanpa garis miring akhir supaya
+        # `/usr/local/etc/php` (direktori itu sendiri) ikut sah, bukan hanya
+        # isinya. Batas segmen tetap terjaga: `/usr/local/etc/phpx` TIDAK cocok
+        # karena setelah root harus '/' atau habis.
+        norm = text.rstrip("/")
+        for root in PATH_SAFE_ROOTS:
+            base = root.rstrip("/")
+            if norm == base or norm.startswith(base + "/"):
+                return ""
+        return (f"ditolak: path absolut {text!r} di luar area yang diizinkan "
+                f"({', '.join(PATH_SAFE_ROOTS)})")
+    return ""
+
 # Karakter yang tidak punya alasan sah di whitelist, dipetakan ke nama aturan
 # supaya pesan penolakan menyebut APA yang dilanggar, bukan sekadar "ditolak".
 METAKARAKTER = {
@@ -136,6 +186,12 @@ def validate_command(entry: str) -> str:
                 f"({', '.join(sorted(SAFE_EXECUTABLES))}) — shell/tool jaringan "
                 f"({', '.join(('sh', 'bash', 'nc', 'curl', 'wget'))}) sengaja "
                 f"tidak pernah masuk whitelist")
+    # RR-3: argumen path diperiksa setelah grammar (grammar memastikan hanya
+    # karakter aman; validator ini memastikan TUJUAN path-nya masuk akal).
+    for arg in (m.group("args") or "").split():
+        why = validate_path_arg(arg)
+        if why:
+            return why
     return ""
 
 

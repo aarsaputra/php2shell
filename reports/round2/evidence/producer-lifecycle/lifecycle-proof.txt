@@ -1,0 +1,24 @@
+=== R2-04 EVIDENCE: producer lifecycle tests (verbose) ===
+2026-11-12T11:49:03+08:00
+
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/lota1337/python/php2shell
+configfile: pytest.ini
+plugins: asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 8 items
+
+tests/test_producer_lifecycle.py ........                                [100%]
+
+============================== 8 passed in 1.35s ===============================
+
+=== konstanta budget shutdown ===
+_PRODUCER_CONNECT_TIMEOUT = 4.0
+_PRODUCER_READ_TIMEOUT    = 4.0
+_JOIN_TIMEOUT             = 5.0
+_JOIN_MIN_TIMEOUT         = 0.25
+read < join  -> True
+
+=== thread producer tersisa setelah suite (harus kosong) ===
+TIDAK ADA

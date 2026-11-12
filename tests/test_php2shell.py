@@ -324,6 +324,10 @@ class TestKlaimBanner(unittest.TestCase):
              `create_connection(self.host, ...)` yang me-resolve ulang) —
              menutup celah DNS rebinding. `allow_private` dipertahankan True
              (target lab) sementara endpoint metadata cloud tetap ditolak.
+          5. R2-03: `Chain.__init__` memvalidasi `huge_mb` lewat
+             `memprobe.validate_huge_mb()` (batas 1..SAFE_CEILING_MB) sebelum
+             field `big` dibangun — jalur API Python langsung tidak lagi bisa
+             melampaui plafon yang ditegakkan argparse.
         """
         import hashlib
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -331,7 +335,7 @@ class TestKlaimBanner(unittest.TestCase):
         with open(p, "rb") as fh:
             now = hashlib.sha256(fh.read()).hexdigest()
         self.assertEqual(now,
-            "69e1cad001a23994836ca4f38c4602e1b940c297e717e2c4e8c6c2f375a96031",
+            "a9a961c6da06c7bfc7b48785144b56eb1b3790614c02732b9323d8a87f1a5adb",
             "lib/chain.py berubah — review diff, lalu perbarui hash ini")
 
 

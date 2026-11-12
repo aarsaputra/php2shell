@@ -1,0 +1,125 @@
+=== NEGATIVE TESTING (R2-06 C) ===
+
+--- N1. target tidak terjangkau (port mati) ---
+
+--- N2. private IP tanpa --allow-private-target (pagar SSRF) ---
+             diblokir kebijakan tujuan (anti-SSRF) — request TIDAK dikirim; alamat 127.0.0.1 privat/loopback/link-local/reserved — diblokir untuk mencegah SSRF; pakai --allow-private-target bila ini memang target lokal/lab
+             ! PolicyError: alamat 127.0.0.1 privat/loopback/link-local/reserved — diblokir untuk mencegah SSRF; pakai --allow-private-target bila ini memang target lokal/lab
+
+--- N3. metadata cloud (169.254.169.254) selalu ditolak ---
+             diblokir kebijakan tujuan (anti-SSRF) — request TIDAK dikirim; host '169.254.169.254' mengarah ke endpoint metadata cloud/IMDS 169.254.169.254 — diblokir untuk mencegah SSRF (pencurian kredensial instance); alamat metadata tidak pernah diizinkan dan TIDAK ADA flag yang membukanya, termasuk --allow-private-target
+             ! PolicyError: host '169.254.169.254' mengarah ke endpoint metadata cloud/IMDS 169.254.169.254 — diblokir untuk mencegah SSRF (pencurian kredensial instance); alamat metadata tidak pernah diizinkan dan TIDAK ADA flag yang membukanya, termasuk --allow-private-target
+
+--- N4. skema ilegal (file://) ---
+             diblokir kebijakan tujuan (anti-SSRF) — request TIDAK dikirim; skema file ditolak — hanya http/https yang diizinkan (didapat: 'file:///etc/passwd')
+             ! PolicyError: skema file ditolak — hanya http/https yang diizinkan (didapat: 'file:///etc/passwd')
+
+--- N5. resource limit: --huge-mb 700 (di atas plafon 512) ---
+                         [--exploit-profile {lab,bookworm}] [--huge-mb MB]
+php2shell exploit: error: argument --huge-mb: --huge-mb 700 melewati plafon aman 512 MB (SAFE_CEILING_MB). Field 'big' sebesar itu tidak pernah dikirim ke target.
+
+--- N6. resource limit: --huge-mb 0 / -5 ---
+                         [--exploit-profile {lab,bookworm}] [--huge-mb MB]
+php2shell exploit: error: argument --huge-mb: --huge-mb harus > 0 (diberikan 0). Ukuran field 'big' dalam MB; 0/negatif tidak punya arti di sisi target.
+                         [--exploit-profile {lab,bookworm}] [--huge-mb MB]
+php2shell exploit: error: argument --huge-mb: --huge-mb harus > 0 (diberikan -5). Ukuran field 'big' dalam MB; 0/negatif tidak punya arti di sisi target.
+
+--- N7. redirect scope: --redirect-scope nilai asing ---
+                        [--check-version] [--no-check-updates]
+                        [-u URLS [URLS ...]] [-l LIST]
+php2shell detect: error: argument --redirect-scope: invalid choice: 'everything' (choose from 'host', 'subdomains', 'any')
+
+--- N8. revshell tetap tidak ada di parser ---
+                 [--no-color] [--no-display-errors] [--json JSON] [--csv CSV]
+php2shell: error: unrecognized arguments: --revshell 1.2.3.4
+
+--- N9. --allow-cmd tool berbahaya ---
+bash     -> --allow-cmd 'bash' tidak diizinkan. Pilihan: uname, hostname, pwd, ls, df, uptime
+nc       -> --allow-cmd 'nc' tidak diizinkan. Pilihan: uname, hostname, pwd, ls, df, uptime
+curl     -> --allow-cmd 'curl' tidak diizinkan. Pilihan: uname, hostname, pwd, ls, df, uptime
+wget     -> --allow-cmd 'wget' tidak diizinkan. Pilihan: uname, hostname, pwd, ls, df, uptime
+chmod    -> --allow-cmd 'chmod' tidak diizinkan. Pilihan: uname, hostname, pwd, ls, df, uptime
+rm       -> --allow-cmd 'rm' tidak diizinkan. Pilihan: uname, hostname, pwd, ls, df, uptime
+python   -> --allow-cmd 'python' tidak diizinkan. Pilihan: uname, hostname, pwd, ls, df, uptime
+
+--- N10. no-follow-redirects tetap berhenti di 3xx (lab 302?) ---
+
+=== SELESAI ===
+
+__HERMES_PIPE_c9782edbcbae__0__HERMES_PIPE_c9782edbcbae__
+
+__HERMES_CWD_c9782edbcbae__/home/lota1337/python/php2shell__HERMES_CWD_c9782edbcbae__
+
+--- N10 (ulang, bukti lengkap): target tidak terjangkau ---
+
+  unknown    http://127.0.0.1:9/x.php
+             versi PHP tidak bocor (header/body bersih / diproksi CDN) · OOM probe error: control: ConnectionError: Failed to perform, curl: (7) Failed to connect to 127.0.0.1:9 after 0 ms: Could not connect to server. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
+             + upload_progress tidak terlihat (HTTP 0, tanpa Set-Cookie)
+             + oom: verdict=error signal= confirmed=False probes=0 ()
+             ! ConnectionError: Failed to perform, curl: (7) Failed to connect to 127.0.0.1:9 after 0 ms: Could not connect to server. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
+
+  #  verdict     php        up       disp     score  rdy  exp  url
+------------------------------------------------------------------
+  1  unknown     ?          unknown  off      30/90  no   no   http://127.0.0.1:9/x.php
+
+total=1  vulnerable=0  eol=0  patched=0  unknown=1  ready=0  exploited=0
+exit_code=0
+
+--- N11: target tidak rentan (PHP versi fixed, header palsu) ---
+(image 8.4.30 tidak tersedia; dilewati)
+
+  #  verdict     php        up       disp     score  rdy  exp  url
+------------------------------------------------------------------
+  1  unknown     ?          unknown  off      30/90  no   no   http://127.0.0.1:18097/
+
+total=1  vulnerable=0  eol=0  patched=0  unknown=1  ready=0  exploited=0
+exit_code=0
+
+__HERMES_PIPE_c9782edbcbae__0__HERMES_PIPE_c9782edbcbae__
+
+__HERMES_CWD_c9782edbcbae__/home/lota1337/python/php2shell__HERMES_CWD_c9782edbcbae__
+
+--- N10 (ulang, bukti lengkap): target tidak terjangkau ---
+
+  unknown    http://127.0.0.1:9/x.php
+             versi PHP tidak bocor (header/body bersih / diproksi CDN) · OOM probe error: control: ConnectionError: Failed to perform, curl: (7) Failed to connect to 127.0.0.1:9 after 0 ms: Could not connect to server. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
+             + upload_progress tidak terlihat (HTTP 0, tanpa Set-Cookie)
+             + oom: verdict=error signal= confirmed=False probes=0 ()
+             ! ConnectionError: Failed to perform, curl: (7) Failed to connect to 127.0.0.1:9 after 0 ms: Could not connect to server. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
+
+  #  verdict     php        up       disp     score  rdy  exp  url
+------------------------------------------------------------------
+  1  unknown     ?          unknown  off      30/90  no   no   http://127.0.0.1:9/x.php
+
+total=1  vulnerable=0  eol=0  patched=0  unknown=1  ready=0  exploited=0
+exit_code=0
+
+__HERMES_PIPE_c9782edbcbae__0__HERMES_PIPE_c9782edbcbae__
+
+__HERMES_CWD_c9782edbcbae__/home/lota1337/python/php2shell__HERMES_CWD_c9782edbcbae__
+
+--- N11 (FINAL): target versi PATCHED (php:8.3.36-apache, fix-floor 8.3.36) ---
+container: p2s-fixed836 @ 127.0.0.1:18097
+php 8.3.36
+
+  #  verdict     php        up       disp     score  rdy  exp  url
+------------------------------------------------------------------
+  1  patched     8.3.36     on       off      45/90  no   no   http://127.0.0.1:18097/
+
+total=1  vulnerable=0  eol=0  patched=1  unknown=0  ready=0  exploited=0
+
+--- N12: tool TIDAK menjalankan rantai pada target patched (tanpa --force) ---
+URL      : http://127.0.0.1:18097/
+verdict  : patched — PHP 8.3.36 >= fix-floor 8.3.36 · caveat CVE-2026-115560: fix-floor ini tidak menutup session serialize_handler mismatch (object injection; butuh app-side ini_set — audit kode aplikasi untuk pokok ini)
+skor     : 45/90  (status=blocked)
+  BLOCKER: versi 8.3.36 sudah dipatch (fix 8.3.36); CVE-2026-109619/109618 tidak berlaku
+
+DITOLAK — target tidak memenuhi pra-syarat; pakai --force untuk memaksa
+batal    : tidak ada yang dikirim ke http://127.0.0.1:18097/
+kurang   : versi 8.3.36 sudah dipatch (fix 8.3.36); CVE-2026-109619/109618 tidak berlaku
+
+=== SELESAI (N11/N12) ===
+
+__HERMES_PIPE_cf4469700c9e__0__HERMES_PIPE_cf4469700c9e__
+
+__HERMES_CWD_cf4469700c9e__/home/lota1337/python/php2shell__HERMES_CWD_cf4469700c9e__

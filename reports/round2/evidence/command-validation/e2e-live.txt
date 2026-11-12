@@ -1,0 +1,67 @@
+=== R2-01 E2E: command policy di lab hidup ===
+--- -c id ---
+URL      : http://127.0.0.1:8095/index.php
+verdict  : vulnerable — PHP 8.4.26 < fix-floor 8.4.27 (terakhir rentan: 8.4.26)
+skor     : 75/90  (status=needs_review)
+
+DITOLAK — target tidak memenuhi pra-syarat; pakai --force untuk memaksa
+batal    : tidak ada yang dikirim ke http://127.0.0.1:8095/index.php
+kurang   : pra-syarat lain
+
+--- -c id 1000 ---
+URL      : http://127.0.0.1:8095/index.php
+ditolak: argumen '1000' tidak sesuai skema 'id' (diizinkan: <tanpa argumen>)
+batal    : perintah proof ditolak sebelum apa pun dikirim
+
+--- -c id; whoami ---
+URL      : http://127.0.0.1:8095/index.php
+ditolak: perintah memuat operator/token berbahaya ';' — proof-of-access hanya boleh satu perintah identitas (id/whoami), tanpa chaining
+batal    : perintah proof ditolak sebelum apa pun dikirim
+
+--- -c ls / ---
+URL      : http://127.0.0.1:8095/index.php
+ditolak: 'ls' bukan perintah proof yang diizinkan (id, whoami)
+batal    : perintah proof ditolak sebelum apa pun dikirim
+
+--- -c cat /etc/hosts ---
+URL      : http://127.0.0.1:8095/index.php
+ditolak: 'cat' bukan perintah proof yang diizinkan (id, whoami)
+batal    : perintah proof ditolak sebelum apa pun dikirim
+
+--- -c env ---
+URL      : http://127.0.0.1:8095/index.php
+ditolak: 'env' bukan perintah proof yang diizinkan (id, whoami)
+batal    : perintah proof ditolak sebelum apa pun dikirim
+
+--- -c uname ---
+URL      : http://127.0.0.1:8095/index.php
+ditolak: 'uname' bukan perintah proof yang diizinkan (id, whoami)
+batal    : perintah proof ditolak sebelum apa pun dikirim
+
+--- --allow-cmd ls -c ls ---
+URL      : http://127.0.0.1:8095/index.php
+verdict  : vulnerable — PHP 8.4.26 < fix-floor 8.4.27 (terakhir rentan: 8.4.26)
+skor     : 75/90  (status=needs_review)
+
+DITOLAK — target tidak memenuhi pra-syarat; pakai --force untuk memaksa
+batal    : tidak ada yang dikirim ke http://127.0.0.1:8095/index.php
+kurang   : pra-syarat lain
+
+--- --allow-cmd ls -c ls -la ---
+URL      : http://127.0.0.1:8095/index.php
+verdict  : vulnerable — PHP 8.4.26 < fix-floor 8.4.27 (terakhir rentan: 8.4.26)
+skor     : 75/90  (status=needs_review)
+
+DITOLAK — target tidak memenuhi pra-syarat; pakai --force untuk memaksa
+batal    : tidak ada yang dikirim ke http://127.0.0.1:8095/index.php
+kurang   : pra-syarat lain
+
+--- --allow-cmd cat -c id ---
+URL      : http://127.0.0.1:8095/index.php
+--allow-cmd 'cat' tidak diizinkan. Pilihan: uname, hostname, pwd, ls, df, uptime
+batal    : perintah proof ditolak sebelum apa pun dikirim
+
+
+__HERMES_PIPE_c9782edbcbae__0__HERMES_PIPE_c9782edbcbae__
+
+__HERMES_CWD_c9782edbcbae__/home/lota1337/python/php2shell__HERMES_CWD_c9782edbcbae__

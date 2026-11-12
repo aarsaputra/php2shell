@@ -21,8 +21,10 @@
 set -u
 
 NAME=p2s-lab-8426
-IMAGE=php:8.4.26-apache
+IMAGE=p2s-lab:local
 PORT=8095
+NET=p2s-lab-internal       # jaringan internal (target tanpa egress)
+EDGE=p2s-lab-edge          # jaringan relay (hanya untuk publish 127.0.0.1)
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # root repo php2shell/ (punya docker/)
 DOCKER_DIR="$REPO_DIR/docker"
 OUT_DIR="${REPO_OUT_DIR:-$REPO_DIR/out}"
@@ -39,31 +41,68 @@ start)
         [ -f "$f" ] || { echo "GAGAL: file penulis tidak ada: $f" >&2; exit 1; }
     done
 
-    echo "== tarik image $IMAGE =="
-    docker pull "$IMAGE" >/dev/null 2>&1 || true
+    echo "== tarik image dasar (cache build) =="
+    docker pull php:8.4.26-apache >/dev/null 2>&1 || true
 
     echo "== hapus container lama (kalau ada) =="
     docker rm -f "$NAME" >/dev/null 2>&1
 
-    # /out harus bisa ditulis worker Apache (www-data, uid/gid 33) untuk
-    # menaruh file bukti. 0770 + group www-data sudah cukup dan TIDAK
-    # world-writable (world-write + sticky bit): dengan itu siapa pun di host
-    # bisa menaruh/menimpa artefak yang nanti dibaca operator sebagai bukti.
-    # Host: OUT_DIR dibuat mode 0770 (bukan default 0755). Sengaja TIDAK
-    # di-chown ke root — biar tetap milik user pemilik repo.
-    install -d -m 0770 "$OUT_DIR" \
-        || { mkdir -p "$OUT_DIR" && chmod 0770 "$OUT_DIR"; }
+    # /out harus bisa ditulis worker Apache. Setelah R2-05 worker memakai
+    # uid/gid PEMILIK REPO (mapping di docker/Dockerfile), jadi tidak ada
+    # chown/chmod dari dalam container ke path host. Host hanya memastikan
+    # direktori itu milik operator dan tidak world-writable.
+    install -d -m 0750 "$OUT_DIR" \
+        || { mkdir -p "$OUT_DIR" && chmod 0750 "$OUT_DIR"; }
 
-    echo "== jalankan $NAME di 127.0.0.1:$PORT (mount config penulis) =="
+    P2S_UID="${P2S_UID:-$(id -u)}"
+    P2S_GID="${P2S_GID:-$(id -g)}"
+
+    echo "== build image lab (uid/gid mapping $P2S_UID:$P2S_GID) =="
+    docker build -q \
+        --build-arg "P2S_UID=$P2S_UID" --build-arg "P2S_GID=$P2S_GID" \
+        -t "$IMAGE" "$DOCKER_DIR" \
+        || { echo "GAGAL: build" >&2; exit 1; }
+
+    echo "== jaringan internal (tanpa egress) =="
+    docker network inspect "$NET" >/dev/null 2>&1 \
+        || docker network create --internal "$NET" >/dev/null
+
+    echo "== jalankan $NAME — tidak ada port publish (jaringan internal) =="
+    # Tanpa NET_ADMIN/NET_RAW, tanpa privileged, filesystem read-only kecuali
+    # tmpfs, capability hanya yang dibutuhkan Apache prefork.
     docker run -d --name "$NAME" \
-        -p "127.0.0.1:$PORT:80" \
+        --network "$NET" \
+        --read-only \
+        --tmpfs /var/run/apache2:rw,mode=755 \
+        --tmpfs /var/lock/apache2:rw,mode=755 \
+        --tmpfs /var/log/apache2:rw,mode=755 \
+        --tmpfs /tmp:rw,mode=1777 \
+        --cap-drop ALL \
+        --cap-add NET_BIND_SERVICE --cap-add SETUID --cap-add SETGID \
+        --cap-add CHOWN \
+        --security-opt no-new-privileges:true \
+        --pids-limit 256 --memory 512m --cpus 2 \
         -v "$DOCKER_DIR/php.ini":/usr/local/etc/php/conf.d/zz-php2shell.ini:ro \
         -v "$DOCKER_DIR/apache.conf":/etc/apache2/conf-enabled/zz-php2shell.conf:ro \
         -v "$DOCKER_DIR/www":/var/www/html:ro \
-        -v "$OUT_DIR":/out \
-        --entrypoint /bin/sh \
-        "$IMAGE" -c 'install -d -m 0770 -o www-data -g www-data /out 2>/dev/null || { chmod 0770 /out && chgrp www-data /out; }; exec apache2-foreground' \
+        -v "$OUT_DIR":/out:rw \
+        "$IMAGE" \
     || { echo "GAGAL: run" >&2; exit 1; }
+
+    # Relay socat: satu-satunya jalur host -> target. Container relay ada di
+    # jaringan internal (untuk menjangkau target) DAN jaringan edge (untuk
+    # mem-publish port ke 127.0.0.1). Target sendiri tetap tanpa rute keluar.
+    echo "== relay 127.0.0.1:$PORT -> $NAME:80 =="
+    docker rm -f "${NAME}-relay" >/dev/null 2>&1
+    docker network inspect "$EDGE" >/dev/null 2>&1 \
+        || docker network create "$EDGE" >/dev/null
+    docker run -d --name "${NAME}-relay" \
+        --network "$EDGE" \
+        -p "127.0.0.1:$PORT:8080" \
+        alpine/socat TCP-LISTEN:8080,fork,reuseaddr "TCP:$NAME:80" \
+        >/dev/null || { echo "GAGAL: relay" >&2; exit 1; }
+    docker network connect "$NET" "${NAME}-relay" >/dev/null 2>&1 || true
+    docker network connect --alias "$NAME" "$NET" "${NAME}-relay" >/dev/null 2>&1 || true
 
     echo "== tunggu siap =="
     code=""
@@ -91,11 +130,14 @@ status)
     ;;
 
 stop)
+    docker rm -f "${NAME}-relay" >/dev/null 2>&1
     docker rm -f "$NAME" 2>&1 | tail -1
     ;;
 
 destroy)
+    docker rm -f "${NAME}-relay" >/dev/null 2>&1
     docker rm -f "$NAME" >/dev/null 2>&1
+    docker network rm "$NET" "$EDGE" >/dev/null 2>&1
     ;;
 
 *)

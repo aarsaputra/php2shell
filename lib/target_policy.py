@@ -50,6 +50,7 @@ import ipaddress
 import re
 import socket
 import urllib.parse
+from dataclasses import dataclass
 
 __all__ = [
     "PolicyError",
@@ -109,6 +110,188 @@ _EXTRA_NETWORKS = (
 _LOOPBACK_NAMES = frozenset({
     "localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback",
 })
+
+# --------------------------------------------------------------- R2-02 -----
+# SCOPE REDIRECT. Pemeriksaan IP saja tidak cukup: redirect ke
+# `https://attacker.example/callback` memakai IP PUBLIK yang sah, jadi lolos
+# semua pagar SSRF, padahal request sudah keluar dari scope engagement dan
+# membawa cookie/header tool ke domain lain.
+#
+# Tiga mode, dipilih operator (default paling ketat):
+#   host       host harus SAMA PERSIS dengan host URL awal
+#   subdomains host sama, atau subdomain sah dari host awal (batas label!)
+#   any        host bebas (opt-in eksplisit, tetap tunduk pada pagar IP)
+#
+# Yang SELALU ditegakkan, apa pun mode-nya:
+#   * skema tidak boleh turun https -> http (downgrade = data terbuka),
+#   * port efektif harus sama kecuali mode `any`,
+#   * pagar IP/metadata di `check_url()` tetap jalan lebih dulu.
+REDIRECT_SCOPES = ("host", "subdomains", "any")
+DEFAULT_REDIRECT_SCOPE = "host"
+
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+@dataclass(frozen=True)
+class RedirectScope:
+    """Tujuan yang masih dianggap "di dalam scope" untuk satu engagement.
+
+    Dibuat dari URL awal (yang diketik operator) dan dipakai untuk memeriksa
+    SETIAP hop redirect. Immutable supaya tidak bisa dilonggarkan di tengah
+    rantai oleh kode lain.
+    """
+
+    host: str        # host ternormalisasi (lowercase, IDNA/punycode, tanpa titik akhir)
+    scheme: str      # "http" | "https"
+    port: int        # port efektif (80/443 bila tidak ditulis)
+    mode: str = DEFAULT_REDIRECT_SCOPE
+
+    def __post_init__(self) -> None:
+        if self.mode not in REDIRECT_SCOPES:
+            raise PolicyError(
+                f"mode scope {self.mode!r} tidak dikenal (pilihan: "
+                f"{', '.join(REDIRECT_SCOPES)})")
+
+
+def normalize_hostname(host: object) -> str:
+    """Bentuk kanonik hostname untuk pembandingan scope.
+
+    Menangani semua trik yang membuat perbandingan string naif gagal:
+      * huruf besar (`EXAMPLE.com`),
+      * titik akhir FQDN (`example.com.`),
+      * IDNA/Unicode (`exämple.com`, `еxample.com` homoglyph akan menjadi
+        punycode berbeda sehingga TIDAK cocok dengan scope ASCII),
+      * IP literal (`[::1]`, `::ffff:127.0.0.1`) via `ipaddress`,
+      * bracket IPv6.
+
+    Tidak pernah melempar untuk input aneh: hasil yang tidak bisa dinormalisasi
+    dikembalikan lowercase apa adanya (pembandingan tetap exact, jadi kegagalan
+    normalisasi berarti TIDAK cocok — fail closed).
+    """
+    raw = str(host or "").strip()
+    if raw.startswith("[") and raw.endswith("]"):
+        raw = raw[1:-1]
+    if not raw:
+        return ""
+    addr = _parse_ip(raw)
+    if addr is not None:
+        return str(addr)
+    name = raw.rstrip(".").lower()
+    if not name:
+        return ""
+    # IDNA: nama non-ASCII -> punycode. `idna` codec menolak label tidak sah;
+    # biarkan bentuk aslinya (tetap lowercase) agar perbandingan exact gagal
+    # dengan aman daripada menerima nama yang tidak bisa dipahami.
+    try:
+        name.encode("ascii")
+        return name
+    except UnicodeEncodeError:
+        try:
+            return name.encode("idna").decode("ascii").lower()
+        except (UnicodeError, ValueError):
+            return name
+
+
+def host_in_scope(host: object, scope: RedirectScope | str,
+                  mode: str | None = None) -> bool:
+    """True bila `host` masih di dalam scope (batas LABEL, bukan substring).
+
+    `host.endswith(scope)` polos adalah bug klasik: `evilexample.com`
+    berakhir dengan `example.com`. Di sini yang diterima hanya:
+      * sama persis, atau
+      * `sub.example.com` untuk mode subdomains — dicek dengan titik pemisah
+        (`.example.com`), sehingga `evilexample.com` tetap ditolak.
+
+    IP literal tidak punya hierarki: hanya cocok bila identik.
+    """
+    scope_host = scope.host if isinstance(scope, RedirectScope) else \
+        normalize_hostname(scope)
+    lvl = mode or (scope.mode if isinstance(scope, RedirectScope) else
+                   DEFAULT_REDIRECT_SCOPE)
+    if lvl == "any":
+        return True
+    h = normalize_hostname(host)
+    if not h or not scope_host:
+        return False
+    if h == scope_host:
+        return True
+    # IP tidak punya subdomain; jangan pernah menerima `1.2.3.4` untuk scope `2.3.4`.
+    if _parse_ip(scope_host) is not None or _parse_ip(h) is not None:
+        return False
+    if lvl == "subdomains":
+        return h.endswith("." + scope_host)
+    return False
+
+
+def make_scope(url: str, mode: str = DEFAULT_REDIRECT_SCOPE) -> RedirectScope:
+    """Bangun `RedirectScope` dari URL yang diketik operator."""
+    if mode not in REDIRECT_SCOPES:
+        raise PolicyError(
+            f"mode scope {mode!r} tidak dikenal (pilihan: "
+            f"{', '.join(REDIRECT_SCOPES)})")
+    try:
+        parts = urllib.parse.urlsplit(str(url or "").strip())
+        scheme = (parts.scheme or "").lower()
+        host = normalize_hostname(parts.hostname)
+        port = parts.port or _DEFAULT_PORTS.get(scheme, 0)
+    except ValueError as exc:
+        raise PolicyError(f"URL awal tidak bisa diurai untuk scope: {exc}") from exc
+    if not host:
+        raise PolicyError(f"URL awal tanpa host: {redact_url(str(url))!r}")
+    return RedirectScope(host=host, scheme=scheme, port=int(port), mode=mode)
+
+
+def check_scope(new_url: str, scope: RedirectScope) -> None:
+    """Tolak `new_url` bila keluar dari scope `scope` (melempar PolicyError).
+
+    Dipanggil untuk SETIAP hop redirect, SETELAH `check_url()` (pagar IP).
+    Skema & port diperiksa lebih dulu karena itu perubahan paling murah
+    untuk dideteksi dan paling sering jadi tanda redirect berbahaya
+    (`https://target/` -> `http://target/` membuka cookie ke jalur cleartext).
+    """
+    text = str(new_url or "").strip()
+    try:
+        parts = urllib.parse.urlsplit(text)
+        scheme = (parts.scheme or "").lower()
+        host = parts.hostname or ""
+        port = parts.port or _DEFAULT_PORTS.get(scheme, 0)
+    except ValueError as exc:
+        raise PolicyError(
+            f"redirect tujuan tidak bisa diurai: {redact_url(text)!r} ({exc})") from exc
+    if not host:
+        raise PolicyError(f"redirect tanpa host: {redact_url(text)!r}")
+
+    if scheme not in ALLOWED_SCHEMES:
+        raise PolicyError(
+            f"redirect ke skema {scheme or '(kosong)'} ditolak — hanya "
+            f"http/https ({redact_url(text)!r})")
+    if scope.scheme == "https" and scheme == "http":
+        raise PolicyError(
+            f"redirect menurunkan skema https -> http ({redact_url(text)!r}) — "
+            f"ditolak karena cookie/header tool akan terkirim tanpa TLS; "
+            f"ini perubahan scope, bukan sekadar hop CDN")
+
+    if not host_in_scope(host, scope):
+        raise PolicyError(
+            f"redirect keluar scope: {redact_url(text)!r} (host "
+            f"{normalize_hostname(host)!r} tidak termasuk scope "
+            f"{scope.host!r}, mode={scope.mode}) — request dihentikan sebelum "
+            f"paket dikirim; pakai --redirect-scope subdomains|any bila ini "
+            f"memang diotorisasi")
+
+    if scope.mode != "any" and int(port) != int(scope.port):
+        # Naik http->https adalah hop CDN normal: port efektif ikut berubah
+        # 80 -> 443 tanpa operator berpindah layanan. Itu satu-satunya
+        # perpindahan port yang diizinkan; selebihnya port = bagian scope.
+        upgrade_default_ports = (
+            scope.scheme == "http" and scheme == "https"
+            and int(scope.port) == 80 and int(port) == 443
+        )
+        if not upgrade_default_ports:
+            raise PolicyError(
+                f"redirect berpindah port {scope.port} -> {port} pada host yang "
+                f"sama ({redact_url(text)!r}) — port adalah bagian dari scope; "
+                f"pakai --redirect-scope any bila ini disengaja")
 
 
 class PolicyError(ValueError):

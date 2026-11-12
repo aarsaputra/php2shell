@@ -1,0 +1,82 @@
+=== FULL REGRESSION — ROUND 2 FINAL (lab HIDUP) ===
+2026-11-12T14:55:27+08:00
+python : Python 3.14.7
+pytest : pytest 9.1.1
+docker : 28.5.2+dfsg4
+compose: Docker Compose version v5.7.1
+lab    : Up About a minute
+
+--- PYTEST ---
+........................................................................ [ 83%]
+..................................................................... [ 96%]
+.....................                                       [100%]
+537 passed, 361 subtests passed in 35.04s
+
+--- UNITTEST ---
+----------------------------------------------------------------------
+Ran 366 tests in 29.630s
+
+OK
+
+--- jumlah modul tes ---
+19
+
+--- jumlah tes per modul baru ---
+  test_command_validation            
+  test_redirect_scope                
+  test_producer_lifecycle            
+  test_docker_lab_hardening          
+  test_upshell_carrier_gate          
+
+--- lab MATI: lapis B skip (bukan lulus diam-diam) ---
+dibuktikan sebelumnya: 521 passed, 11 skipped, 0 failed
+
+=== SELESAI ===
+
+__HERMES_PIPE_fe805ec453cf__0__HERMES_PIPE_fe805ec453cf__
+
+__HERMES_CWD_fe805ec453cf__/home/lota1337/python/php2shell__HERMES_CWD_fe805ec453cf__
+
+--- jumlah tes per modul (aktual, dari run) ---
+  test_command_validation         8 passed
+  test_redirect_scope            24 passed
+  test_producer_lifecycle         8 passed
+  test_docker_lab_hardening      32 passed
+  test_upshell_carrier_gate      18 passed
+  TOTAL suite                    537 passed, 361 subtests
+
+--- git status ---
+   M docker/docker-compose.yml
+   M lab/lab_docker.sh
+   M lib/chain.py
+   M lib/cve115560.py
+   M lib/exploit_runner.py
+   M lib/memprobe.py
+   M lib/target_policy.py
+   M lib/transport.py
+   M php2shell.py
+   M shell/safe_shell.py
+   M shell/upshell_live.py
+   M tests/test_php2shell.py
+   M tests/test_report_and_shell.py
+   M tests/test_runner_deadline.py
+  ?? docker/Dockerfile
+  ?? pytest.ini
+  ?? reports/round2/
+  ?? tests/test_command_validation.py
+  ?? tests/test_docker_lab_hardening.py
+  ?? tests/test_producer_lifecycle.py
+  ?? tests/test_redirect_scope.py
+  ?? tests/test_upshell_carrier_gate.py
+
+--- diffstat ---
+ shell/safe_shell.py            |  56 +++++++++++++
+ shell/upshell_live.py          |  62 +++++++++++++-
+ tests/test_php2shell.py        |   6 +-
+ tests/test_report_and_shell.py |  45 +++++++++-
+ tests/test_runner_deadline.py  |  47 ++++++++++-
+ 14 files changed, 771 insertions(+), 77 deletions(-)
+
+__HERMES_PIPE_fe805ec453cf__0 0__HERMES_PIPE_fe805ec453cf__
+
+__HERMES_CWD_fe805ec453cf__/home/lota1337/python/php2shell__HERMES_CWD_fe805ec453cf__

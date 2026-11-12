@@ -295,10 +295,21 @@ def test_resolve_whitelist_tanpa_extra_mengembalikan_default():
 
 
 def test_resolve_whitelist_menambah_extra_tanpa_duplikat():
-    wl = er.resolve_whitelist(["ls", "LS", "/usr/bin/cat", "./pwd", "ls"])
-    assert "ls" in wl and "cat" in wl and "pwd" in wl
+    """Normalisasi & dedupe tetap jalan; `cat` sekarang bukan pilihan (R2-01).
+
+    `cat` dan `env` dihapus dari EXTRA_ALLOWED_CMDS karena keduanya membaca
+    file/environment sembarang — bukan bukti identitas. Path yang diketik
+    operator tetap dinormalisasi ke basename untuk perintah yang MASIH sah.
+    """
+    wl = er.resolve_whitelist(["ls", "LS", "./pwd", "/usr/bin/uname", "ls"])
+    assert "ls" in wl and "pwd" in wl and "uname" in wl
     assert wl.count("ls") == 1
     assert set(er.DEFAULT_ALLOWED_CMDS) <= set(wl)
+    # cat/env sengaja tidak bisa dibuka lagi, bahkan lewat path absolut.
+    for gone in ("cat", "env"):
+        assert gone not in wl
+        with pytest.raises(ValueError):
+            er.resolve_whitelist([f"/usr/bin/{gone}"])
 
 
 def test_resolve_whitelist_menolak_tool_berbahaya():
@@ -399,10 +410,38 @@ def test_limit_di_bawah_plafon_tidak_berhenti(sandbox):
 
 
 def test_huge_mb_eksplisit_melewati_probe_dan_plafon(sandbox):
+    """huge_mb eksplisit melewati probe; nilai di atas plafon DITOLAK (R2-03).
+
+    Sebelum R2-03 jalur API tidak punya batas: `run(huge_mb=700)` meloloskan
+    700 MB walaupun CLI (`--huge-mb`) sudah menolak >512 MB. Sekarang
+    `memprobe.validate_huge_mb()` menjaga lapisan business logic, jadi nilai
+    yang sama ditolak SEBELUM probe/payload — bukan hanya di argparse.
+    Batas atas 512 sendiri tetap sah dan lewat tanpa probe.
+    """
+    # Di atas plafon: ditolak lebih awal, tanpa probe, tanpa rantai.
     res = _run(huge_mb=700, max_total_timeout=1, timeout=1, retries=1)
     assert sandbox["probe_calls"] == 0
-    assert "batas aman" not in res.error
-    assert FakeChain.made[0].huge_mb == 700
+    assert FakeChain.made == []
+    assert "plafon aman" in res.error, res.error
+    assert "700" in res.error
+
+    # Tepat di plafon: lolos validasi, tetap tanpa probe, rantai dipanggil.
+    FakeChain.made.clear()
+    ok = _run(huge_mb=memprobe.SAFE_CEILING_MB, max_total_timeout=1,
+              timeout=1, retries=1)
+    assert sandbox["probe_calls"] == 0
+    assert "batas aman" not in ok.error
+    assert FakeChain.made[0].huge_mb == memprobe.SAFE_CEILING_MB
+
+
+def test_huge_mb_negatif_ditolak_di_lapisan_api(sandbox):
+    """Nilai tak masuk akal ditolak sebagai error hasil, bukan AssertionError."""
+    for bad in (-5, 0, True, "64", 64.0):
+        FakeChain.made.clear()
+        res = _run(huge_mb=bad, max_total_timeout=1, timeout=1, retries=1)
+        assert FakeChain.made == [], f"huge_mb={bad!r} sampai ke rantai"
+        assert res.error.startswith("ValueError:"), (bad, res.error)
+        assert sandbox["probe_calls"] == 0
 
 
 def test_memory_limit_tidak_terbaca_menghentikan_eksploitasi(sandbox):

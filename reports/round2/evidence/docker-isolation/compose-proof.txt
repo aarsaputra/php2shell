@@ -1,0 +1,54 @@
+=== R2-05 via docker compose ASLI (bukan docker run setara) ===
+2026-11-12T14:48:04+08:00
+Docker Compose version v5.7.1
+
+--- compose config valid ---
+config OK
+
+--- container dibuat compose: kontrol ---
+ReadonlyRootfs=true
+Privileged=false
+CapDrop=[ALL]
+CapAdd=[CAP_CHOWN CAP_NET_BIND_SERVICE CAP_SETGID CAP_SETUID]
+SecurityOpt=[no-new-privileges:true]
+PidsLimit=256
+Memory=536870912
+NanoCpus=2000000000
+PortBindings=map[]
+Network=p2s-lab-internal
+
+--- network internal ---
+Internal=true Driver=bridge
+
+--- TARGET tidak publish port (harus kosong) ---
+{}
+
+--- egress internet ---
+bash: connect: Network is unreachable
+bash: line 1: /dev/tcp/1.1.1.1/443: Network is unreachable
+tcp_rc=1
+--- egress ke host LAN ---
+bash: connect: Network is unreachable
+bash: line 1: /dev/tcp/192.168.100.7/18999: Network is unreachable
+lan_rc=1
+--- DNS ---
+DNS FAIL (no route)
+
+--- worker identity + /out ownership ---
+root     apache2 -DFOREGROUND
+p2s      apache2 -DFOREGROUND
+drwxr-s--- 4 1000 1000 4096 Nov 12 03:29 /out
+--- tulis bukti sebagai worker (uid mapping, tanpa chown) ---
+uid=1000(p2s) gid=1000(p2s) groups=1000(p2s)
+WRITE_OK
+-rw-rw-r-- 1 1000 1000 14 Nov 12 06:48 /out/.ctest
+
+--- reachability dari host lewat docker network connect (relay manual) ---
+relay bridge ip=172.17.0.2
+via-relay HTTP 200
+
+=== SELESAI ===
+
+__HERMES_PIPE_fe805ec453cf__0__HERMES_PIPE_fe805ec453cf__
+
+__HERMES_CWD_fe805ec453cf__/home/lota1337/python/php2shell__HERMES_CWD_fe805ec453cf__

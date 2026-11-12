@@ -1,0 +1,67 @@
+=== KONFIRMASI FINAL (setelah semua edit laporan) ===
+2026-11-12T11:45:42+08:00
+
+--- pytest ---
+............................................. [ 98%]
+.....                                                                    [100%]
+497 passed, 228 subtests passed in 26.38s
+--- unittest ---
+----------------------------------------------------------------------
+Ran 343 tests in 25.810s
+
+OK
+
+--- syntax semua file yang diubah ---
+lib/exploit_runner.py                      OK
+lib/memprobe.py                            OK
+lib/chain.py                               OK
+lib/target_policy.py                       OK
+lib/transport.py                           OK
+lib/cve115560.py                           OK
+php2shell.py                               OK
+tests/test_redirect_scope.py               OK
+tests/test_producer_lifecycle.py           OK
+tests/test_docker_lab_hardening.py         OK
+tests/test_command_validation.py           OK
+
+--- bash syntax ---
+lab_docker.sh OK
+--- yaml valid ---
+compose OK
+
+--- git status ---
+ M docker/docker-compose.yml
+ M lab/lab_docker.sh
+ M lib/chain.py
+ M lib/cve115560.py
+ M lib/exploit_runner.py
+ M lib/memprobe.py
+ M lib/target_policy.py
+ M lib/transport.py
+ M php2shell.py
+ M tests/test_php2shell.py
+ M tests/test_runner_deadline.py
+?? docker/Dockerfile
+?? pytest.ini
+?? tests/test_command_validation.py
+?? tests/test_docker_lab_hardening.py
+?? tests/test_producer_lifecycle.py
+?? tests/test_redirect_scope.py
+
+--- diffstat ---
+ docker/docker-compose.yml     |  86 +++++++++++++++-----
+ lab/lab_docker.sh             |  74 +++++++++++++----
+ lib/chain.py                  |   6 +-
+ lib/cve115560.py              |  19 ++++-
+ lib/exploit_runner.py         | 181 +++++++++++++++++++++++++++++++++++------
+ lib/memprobe.py               |  30 +++++++
+ lib/target_policy.py          | 183 ++++++++++++++++++++++++++++++++++++++++++
+ lib/transport.py              |  26 +++++-
+ php2shell.py                  |  27 ++++++-
+ tests/test_php2shell.py       |   6 +-
+ tests/test_runner_deadline.py |  47 ++++++++++-
+ 11 files changed, 612 insertions(+), 73 deletions(-)
+
+__HERMES_PIPE_c9782edbcbae__0__HERMES_PIPE_c9782edbcbae__
+
+__HERMES_CWD_c9782edbcbae__/home/lota1337/python/php2shell__HERMES_CWD_c9782edbcbae__

@@ -281,7 +281,7 @@ class PolicyRedirectHandler(urllib.request.HTTPRedirectHandler):
     """
 
     def __init__(self, allow_private: bool = False, follow: bool = True,
-                 resolve: bool = True) -> None:
+                 resolve: bool = True, scope=None) -> None:
         super().__init__()
         self.allow_private = allow_private
         self.follow = follow
@@ -289,12 +289,18 @@ class PolicyRedirectHandler(urllib.request.HTTPRedirectHandler):
         # tetap dilakukan, tetapi resolusi DNS ditunda ke `resolve_pinned()`
         # supaya hanya ada satu jawaban DNS per hop (anti DNS rebinding).
         self.resolve = resolve
+        # R2-02: scope tujuan. None = jaring kedua tidak menegakkan scope
+        # (dipakai pemanggil yang sudah memeriksa tiap hop sendiri), selain itu
+        # setiap Location diperiksa terhadap scope yang sama.
+        self.scope = scope
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         # Diperiksa SEBELUM apa pun dikirim: ini satu-satunya tempat di jalur
         # urllib di mana tujuan redirect masih bisa dihentikan.
         policy.check_url(newurl, allow_private=self.allow_private,
                          resolve=self.resolve)
+        if self.scope is not None:
+            policy.check_scope(newurl, self.scope)
         if not self.follow:
             return None  # biarkan jadi HTTPError -> pemanggil baca status 3xx
         return super().redirect_request(req, fp, code, msg, headers, newurl)
@@ -338,6 +344,7 @@ class Transport:
         follow_redirects: bool = True,
         allow_private: bool = False,
         max_redirects: int = MAX_REDIRECTS,
+        redirect_scope: str = policy.DEFAULT_REDIRECT_SCOPE,
     ) -> None:
         if profile not in PROFILES:
             raise ValueError(f"profil tidak dikenal: {profile} (pilihan: {', '.join(PROFILES)})")
@@ -355,6 +362,13 @@ class Transport:
         self.follow_redirects = bool(follow_redirects)
         self.allow_private = bool(allow_private)
         self.max_redirects = max(0, int(max_redirects))
+        # R2-02: mode scope redirect. Divalidasi di sini supaya nilai salah
+        # ketik gagal saat Transport dibuat, bukan di tengah rantai redirect.
+        if redirect_scope not in policy.REDIRECT_SCOPES:
+            raise ValueError(
+                f"redirect_scope {redirect_scope!r} tidak dikenal "
+                f"(pilihan: {', '.join(policy.REDIRECT_SCOPES)})")
+        self.redirect_scope = redirect_scope
         self._last = 0.0
         self._session = None
 
@@ -631,10 +645,19 @@ class Transport:
         method_now = method
         data_now = data
         resp = Response(url=current, status=0, error="tidak ada request")
+        # R2-02: scope dibangun dari URL AWAL (yang diketik operator), sekali
+        # per `_fetch`. Setiap hop dibandingkan dengan scope yang sama, jadi
+        # rantai redirect tidak bisa "berpindah domain secara bertahap"
+        # (A -> B -> C) untuk keluar dari scope.
+        try:
+            scope = policy.make_scope(url, self.redirect_scope)
+        except policy.PolicyError as exc:
+            return self._blocked(url, exc, 0)
         for hop in range(self.max_redirects + 1):
             try:
                 policy.check_url(current, allow_private=self.allow_private,
                                  resolve=False)
+                policy.check_scope(current, scope)
             except ValueError as exc:
                 return self._blocked(current, exc, hop)
             resp = self._single(method_now, current, data_now, headers)
@@ -647,6 +670,7 @@ class Transport:
             try:
                 policy.check_url(nxt, allow_private=self.allow_private,
                                  resolve=False)
+                policy.check_scope(nxt, scope)
             except ValueError as exc:
                 self._audit({
                     "profile": self.profile_name,

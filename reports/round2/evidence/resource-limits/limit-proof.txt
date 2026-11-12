@@ -1,0 +1,30 @@
+=== R2-03 EVIDENCE: resource limit (API + CLI) ===
+2026-11-12T11:49:05+08:00
+
+--- tes ---
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/lota1337/python/php2shell
+configfile: pytest.ini
+plugins: asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 31 items / 28 deselected / 3 selected
+
+tests/test_runner_deadline.py ...                                        [100%]
+
+======================= 3 passed, 28 deselected in 0.06s =======================
+
+--- API langsung: exploit_runner.run(huge_mb=...) ---
+huge_mb=700                    -> error="ValueError: huge_mb=700 melewati plafon aman 512 MB (SAFE_CEILING_MB); field 'bi"
+huge_mb=-5                     -> error="ValueError: huge_mb=-5 < 1: field 'big' minimal 1 MB; 0/negatif tidak punya arti"
+huge_mb=0                      -> error="ValueError: huge_mb=0 < 1: field 'big' minimal 1 MB; 0/negatif tidak punya arti "
+huge_mb=True                   -> error='ValueError: huge_mb harus int (MB), bukan bool: True'
+huge_mb='64'                   -> error="ValueError: huge_mb harus int (MB), bukan str: '64'"
+huge_mb=64.0                   -> error='ValueError: huge_mb harus int (MB), bukan float: 64.0'
+huge_mb=512                    -> error='DEADLINE — batas waktu total tercapai sebelum operasi jaringan (sisa -0.72s); ti'
+
+--- API langsung: Chain(huge_mb=...) ---
+huge_mb=-1       -> ValueError: huge_mb=-1 < 1: field 'big' minimal 1 MB; 0/negatif tidak punya arti d
+huge_mb=0        -> ValueError: huge_mb=0 < 1: field 'big' minimal 1 MB; 0/negatif tidak punya arti di
+huge_mb=700      -> ValueError: huge_mb=700 melewati plafon aman 512 MB (SAFE_CEILING_MB); field 'big'
+huge_mb=513      -> ValueError: huge_mb=513 melewati plafon aman 512 MB (SAFE_CEILING_MB); field 'big'
